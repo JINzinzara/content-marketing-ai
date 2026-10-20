@@ -1,4 +1,4 @@
-"""SQLite 연결과 트랜잭션, 계정별 데이터 조회 및 제작권 잔액을 관리"""
+"""계정별 SQLite 저장과 트랜잭션, 데이터 보존형 스키마 변경 담당"""
 
 import sqlite3
 import time
@@ -24,10 +24,40 @@ def connect(settings, *, write=False):
 
 
 def initialize(settings):
-    """테이블 생성"""
+    """기존 행을 지우지 않고 테이블과 누락된 게시물 row를 준비"""
     with connect(settings) as con:
         con.execute("PRAGMA journal_mode=WAL")
         con.executescript(Path(__file__).with_name("schema.sql").read_text())
+        columns = {row["name"] for row in con.execute("PRAGMA table_into(posts)")}
+        for name, definition in {
+            "style_snapshot": "TEXT NOT NULL DEFAULT '{}'",
+            "selected_image_id": "TEXT",
+            "show_price": "INTEGER NOT NULL DEFAULT 0 CHECK(show_price IN (0,1))",
+        }.items():
+            if name not in columns:
+                con.execute(f"ALTER TABLE posts ADD COLUMN {name} {definition}")
+                if name == "show_price":
+                    # 이전 가격 합성 파일을 새 비표시 미리보기의 완성본으로 다운로드 불가
+                    # 이미 발행 처리 중인 버전은 그때 확인한 표시 상태를 유지
+                    con.execute(
+                        "UPDATE posts SET show_price=1 WHERE price!='' AND publish_state IN ('creating','container_ready','publishing','unknown')"
+                    )
+                    con.execute(
+                        "UPDATE posts SET revision=revision+1 WHERE price!='' AND publish_state NOT IN ('creating','container_ready','publishing','unknown')"
+                    )
+        if "logo_file" not in {
+            row["name"] for row in con.execute("PRAGMA table_info(accounts)")
+        }:
+            con.execute(
+                "ALTER TABLE accounts ADD COLUMN logo_file TEXT NOT NULL DEFAULT ''"
+            )
+        if "parameters" not in {
+            row["name"] for row in con.execute("PRAGMA table_info(image_generations)")
+        }:
+            con.execute(
+                "ALTER TABLE image_generations ADD COLUMN parameters TEXT NOT NULL DEFAULT '{}'"
+            )
+        con.execute("PRAGMA user_version=3")
 
 
 def ensure_account(con, owner_id):

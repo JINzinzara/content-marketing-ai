@@ -1,4 +1,4 @@
--- 계정·제작권·게시물·연동·관측 지표·AI 호출 기록을 저장
+-- 사용자·제작권·불변 스타일 버전·이미지 작업과 게시 관측 저장
 CREATE TABLE IF NOT EXISTS accounts (
     id TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '', description TEXT NOT NULL DEFAULT '',
     style TEXT NOT NULL DEFAULT '', style_proposal TEXT NOT NULL DEFAULT '', reference_notes TEXT NOT NULL DEFAULT '',
@@ -53,3 +53,24 @@ CREATE TABLE IF NOT EXISTS recommendations (
     evidence_hash TEXT NOT NULL, content TEXT NOT NULL, created_at INTEGER NOT NULL,
     UNIQUE(owner_id, evidence_hash)
 );
+CREATE TABLE IF NOT EXISTS style_references (
+    id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES accounts(id),
+    filename TEXT NOT NULL, caption TEXT NOT NULL, created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS style_profiles (
+    id INTEGER PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES accounts(id),
+    version INTEGER NOT NULL, status TEXT NOT NULL CHECK(status IN ('proposal','confirmed')),
+    content TEXT NOT NULL, reference_ids TEXT NOT NULL, created_at INTEGER NOT NULL,
+    UNIQUE(owner_id, version)
+);
+CREATE TABLE IF NOT EXISTS image_generations (
+    id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES accounts(id),
+    post_id TEXT NOT NULL REFERENCES posts(id), call_id TEXT UNIQUE NOT NULL REFERENCES ai_calls(id),
+    state TEXT NOT NULL CHECK(state IN ('queued','running','completed','failed','unknown')),
+    style_snapshot TEXT NOT NULL, mask_points TEXT NOT NULL, prompt TEXT NOT NULL,
+    parameters TEXT NOT NULL DEFAULT '{}',
+    filename TEXT, message TEXT NOT NULL DEFAULT '', usage TEXT,
+    created_at INTEGER NOT NULL, completed_at INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS image_one_active ON image_generations(post_id)
+    WHERE state IN ('queued','running','unknown');
