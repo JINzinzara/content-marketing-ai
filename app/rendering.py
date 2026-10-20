@@ -20,7 +20,7 @@ LAYOUTS = {"frame", "split"}
 
 
 def normalize_photo(raw):
-    """업로드 사진 bytes -> 검증·회전 보정·정규화한 JPEG bytes환"""
+    """업로드 사진 bytes -> 검증·회전 보정·정규화한 JPEG bytes 반환"""
     if not raw or len(raw) > UPLOAD_BYTES:
         raise HTTPException(422, "이미지는 8MB 이하의 JPEG·PNG·WebP 파일로 올려주세요")
     try:
