@@ -210,7 +210,7 @@ class TextAI:
             if attempts >= self.settings.ai_attempts_per_post:
                 raise HTTPException(429, "AI 생성 한도에 도달했습니다")
         if not paid and balance(con, owner_id) < 1:
-            raise HTTPException(402, "새로운 제작을 위해서는 제작권이 필요합니다")
+            raise HTTPException(402, "남은 제작권이 없습니다. 제작권을 구매해 주세요")
         total = con.execute(
             "SELECT COUNT(*) FROM ai_calls WHERE owner_id=? AND purpose!='image'",
             (owner_id,),
