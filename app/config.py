@@ -1,4 +1,4 @@
-"""summary: 환경 설정을 읽고 저장 경로·외부 연동 조건·비용 한도 검증"""
+"""GPT-5.4·GPT Image 2 설정과 로컬 저장·인증·통합 예산 검증"""
 
 import os
 import secrets
@@ -22,20 +22,29 @@ class Settings:
     encryption_key: str = field(default="", repr=False)
     instagram_app_id: str = ""
     instagram_app_secret: str = field(default="", repr=False)
-    instagram_redirect_url: str = ""
+    instagram_redirect_uri: str = ""
     instagram_version: str = "v25.0"
     openai_enabled: bool = False
     openai_key: str = field(default="", repr=False)
-    openai_model: str = ""
+    openai_model: str = "gpt-5.4"
+    image_enabled: bool = False
+    image_model: str = "gpt-image-2"
+    image_quality: str = "low"
+    image_attempts_per_post: int = 2
+    image_calls_per_account: int = 10
+    image_reserve_usd: Decimal = Decimal("0")
+    image_text_rate: Decimal = Decimal("0")
+    image_input_rate: Decimal = Decimal("0")
+    image_output_rate: Decimal = Decimal("0")
     ai_budget_usd: Decimal = Decimal("0")
-    input_celling_rate: Decimal = Decimal("0")
+    input_ceiling_rate: Decimal = Decimal("0")
     output_rate: Decimal = Decimal("0")
     max_output_tokens: int = 2048
     ai_attempts_per_post: int = 3
     ai_calls_per_account: int = 20
     history_page_size: int = 20
-    comparsion_hours: int = 24
-    comparsion_tolerance_hours: int = 2
+    comparison_hours: int = 24
+    comparison_tolerance_hours: int = 2
 
     @classmethod
     def from_env(cls):
@@ -56,7 +65,16 @@ class Settings:
             instagram_version=os.getenv("INSTAGRAM_API_VERSION", "v25.0"),
             openai_enabled=os.getenv("OPENAI_ENABLED", "false").lower() == "true",
             openai_key=os.getenv("OPENAI_API_KEY", ""),
-            openai_model=os.getenv("OPENAI_MODEL", ""),
+            openai_model=os.getenv("OPENAI_MODEL", "gpt-5.4"),
+            image_enabled=os.getenv("OPENAI_IMAGE_ENABLED", "false").lower() == "true",
+            image_model=os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-2"),
+            image_quality=os.getenv("OPENAI_IMAGE_QUALITY", "low"),
+            image_attempts_per_post=int(os.getenv("IMAGE_ATTEMPTS_PER_POST", "2")),
+            image_calls_per_account=int(os.getenv("IMAGE_CALLS_PER_ACCOUNT", "10")),
+            image_reserve_usd=Decimal(os.getenv("IMAGE_CALL_RESERVE_USD", "0")),
+            image_text_rate=Decimal(os.getenv("IMAGE_TEXT_INPUT_USD_PER_MILLION", "0")),
+            image_input_rate=Decimal(os.getenv("IMAGE_INPUT_USD_PER_MILLION", "0")),
+            image_output_rate=Decimal(os.getenv("IMAGE_OUTPUT_USD_PER_MILLION", "0")),
             ai_budget_usd=Decimal(os.getenv("OPENAI_BUDGET_USD", "0")),
             input_ceiling_rate=Decimal(
                 os.getenv("OPENAI_INPUT_CEILING_USD_PER_MILLION", "0")
@@ -75,7 +93,7 @@ class Settings:
     @property
     def redirect_url(self):
         return (
-            self.instagram_redirect_url or self.public_url + "/auth/instagram/callback"
+            self.instagram_redirect_uri or self.public_url + "/auth/instagram/callback"
         )
 
     @property
@@ -95,31 +113,65 @@ class Settings:
             and self.openai_key
             and self.openai_model
             and self.ai_budget_usd > 0
-            and self.input_celling_rate > 0
+            and self.input_ceiling_rate > 0
             and self.output_rate > 0
         )
 
+    @property
+    def image_ready(self):
+        return bool(
+            self.image_enabled
+            and self.openai_key
+            and self.image_model == "gpt-image-2"
+            and min(
+                self.ai_budget_usd,
+                self.image_reserve_usd,
+                self.image_text_rate,
+                self.image_input_rate,
+                self.image_output_rate,
+            )
+            > 0
+        )
+
     def prepare(self):
-        """저장 폴더와 필요한 로컬 키 준비, 반환값=None"""
+        """저장 폴더와 필요한 로컬 키 준비"""
         if self.environment not in {"local", "production"}:
             raise ValueError("APP_ENV는 local 또는 production이어야 합니다")
-        for value in (self.ai_budget_usd, self.input_celling_rate, self.output_rate):
+        for value in (
+            self.ai_budget_usd,
+            self.input_ceiling_rate,
+            self.output_rate,
+            self.image_reserve_usd,
+            self.image_text_rate,
+            self.image_input_rate,
+            self.image_output_rate,
+        ):
             if not value.is_finite() or value < 0:
-                raise ValueError("비용과 단가는 유효한 양수 값이어야 합니다")
+                raise ValueError("비용과 단가는 유한한 음수 아닌 값이어야 합니다")
+        if self.image_model != "gpt-image-2" or self.image_quality not in {
+            "low",
+            "medium",
+            "high",
+        }:
+            raise ValueError(
+                "이미지 모델은 gpt-image-2, 품질은 low·medium·high 중에서 선택해주세요"
+            )
+        if min(self.image_attempts_per_post, self.image_calls_per_account) < 1:
+            raise ValueError("이미지 호출 한도는 양수여야 합니다.")
         if not 256 <= self.max_output_tokens <= 8192:
-            raise ValueError("출력 토큰 한도는 256~8192 범위로 설정해주세요")
+            raise ValueError("출력 토큰 한도는 256~8192 범위로 설정하세요")
         if not 1 <= self.history_page_size <= 50:
-            raise ValueError("게시물 조회 수는 1~50 범위로 설정해주세요")
+            raise ValueError("게시물 조회 수는 1~50 범위로 설정하세요")
         if (
             min(
                 self.ai_attempts_per_post,
                 self.ai_calls_per_account,
-                self.comparsion_hours,
+                self.comparison_hours,
             )
             < 1
         ):
             raise ValueError("호출·비교 설정은 양수여야 합니다")
-        if not 0 <= self.comparsion_tolerance_hours < self.comparsion_hours:
+        if not 0 <= self.comparison_tolerance_hours < self.comparison_hours:
             raise ValueError("비교 허용 오차가 비교 시점보다 작아야 합니다")
         if self.environment == "production":
             if (
@@ -130,7 +182,6 @@ class Settings:
                 raise ValueError(
                     "공개 모드에는 HTTPS, Instagram 설정, 세션·암호화 키가 필요합니다"
                 )
-
         self.data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         for attr, filename, generator in (
             ("session_secret", ".session-secret", lambda: secrets.token_urlsafe(48)),
@@ -147,7 +198,7 @@ class Settings:
                     pass
                 setattr(self, attr, path.read_text().strip())
         Fernet(self.encryption_key.encode())
-        for name in ("originals", "finished"):
+        for name in ("originals", "finished", "references", "generated"):
             (self.data_dir / name).mkdir(exist_ok=True, mode=0o700)
 
     @property
