@@ -339,5 +339,5 @@ class ImageAI:
             )
             con.execute(
                 "UPDATE image_generations SET state='unknown', message=? WHERE state IN ('queued', 'running')",
-                ("서버 재식으로 결과를 확인하지 못했습니다"),
+                ("서버 재시작으로 결과를 확인하지 못했습니다"),
             )
