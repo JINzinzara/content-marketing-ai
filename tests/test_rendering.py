@@ -1,0 +1,85 @@
+"""사진 검증·회전·한글 합성·규격·상품 색과 저장 실패 검증"""
+
+import io
+
+import pytest
+from fastapi import HTTPException
+from PIL import Image
+
+from app.db import connect, owned_post
+from app.rendering import normalize_photo, render
+
+
+def test_invalid_upload_rejected(client, csrf):
+    data = {"csrf": csrf, "product_name": "상품", "purpose": "신메뉴 안내"}
+    response = client.post(
+        "/posts",
+        data=data,
+        files={"photo": ("a.jpg", b"<script>bad</script>", "image/jpeg")},
+    )
+    assert response.status_code == 422
+    with pytest.raises(HTTPException):
+        normalize_photo(b"x" * (8 * 1024 * 1024 + 1))
+
+
+@pytest.mark.parametrize(
+    "aspect,size", [("portrait", (1080, 1350)), ("square", (1080, 1080))]
+)
+@pytest.mark.parametrize("layout", ["frame", "split"])
+def test_export_dimensions_long_korean_and_original_color(
+    new_post, settings, aspect, size, layout
+):
+    identifier = new_post(
+        product_name="가을의 따뜻한 밤 크림 라테와 함께하는 조금 더 긴 우리 가게의 신메뉴 소개",
+        layout=layout,
+        aspect=aspect,
+    )
+    with connect(settings) as con:
+        post = owned_post(con, "local-owner", identifier)
+    raw = render(settings, post, "조금 더 긴 우리 가게 이름")
+    with Image.open(io.BytesIO(raw)) as result:
+        assert result.format == "JPEG" and result.mode == "RGB"
+        assert result.size == size
+        pixel = result.getpixel((540, 500 if aspect == "portrait" else 400))
+        assert all(abs(a - b) < 5 for a, b in zip(pixel, (32, 80, 120)))
+
+
+def test_exif_orientation_and_metadata_removed():
+    image = Image.new("RGB", (50, 100), "red")
+    exif = image.getexif()
+    exif[274] = 6
+    out = io.BytesIO()
+    image.save(out, "JPEG", exif=exif)
+    with Image.open(io.BytesIO(normalize_photo(out.getvalue()))) as normalized:
+        assert normalized.size == (100, 50)
+        assert not normalized.getexif()
+
+
+def test_manual_edit_free_and_old_form_cannot_overwrite(
+    client, csrf, new_post, settings
+):
+    from app.credits import finalize
+    from app.db import balance
+
+    identifier = new_post()
+    finalize(settings, "local-owner", identifier)
+    fields = {
+        "csrf": csrf,
+        "title": "더 짧은 제목",
+        "caption": "사장님이 수정한 문구",
+        "hashtags": "#카페",
+        "price": "6,500원",
+        "layout": "split",
+        "aspect": "square",
+        "promotion": "organic",
+        "revision": 1,
+    }
+    assert client.post(f"/posts/{identifier}/edit", data=fields).status_code == 200
+    assert client.post(f"/posts/{identifier}/edit", data=fields).status_code == 409
+    assert client.get(f"/posts/{identifier}/download").status_code == 409
+    finalize(settings, "local-owner", identifier)
+    with connect(settings) as con:
+        assert balance(con, "local-owner") == 4
+    response = client.get(f"/posts/{identifier}/download")
+    with Image.open(io.BytesIO(response.content)) as image:
+        assert image.size == (1080, 1080)

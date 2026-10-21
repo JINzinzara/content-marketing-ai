@@ -1,4 +1,4 @@
-"""테스트용 임시 저장소·웹 클라이언트·사진·모의 외부 응답을 제공"""
+"""외부 호출을 막는 모의 HTTP·임시 DB·사진과 테스트 사용자 준비"""
 
 import io
 import re
@@ -20,7 +20,7 @@ def settings(tmp_path):
 @pytest.fixture
 def app(settings):
     def unexpected(request):
-        raise AssertionError("테스트 중 예상치 못한 외부 요청: " + request.url.path)
+        raise AssertionError("테스트 중 예상하지 않은 외부 요청: " + request.url.path)
 
     with httpx.Client(transport=httpx.MockTransport(unexpected)) as external:
         yield create_app(settings, external)
@@ -47,22 +47,22 @@ def photo():
 
 @pytest.fixture
 def new_post(client, csrf, photo):
-    def create(**change):
+    def create(**changes):
         data = {
             "csrf": csrf,
-            "product_name": "몽블랑 라떼",
-            "facts": "직접 조리한 몽블랑 크림",
+            "product_name": "가을 밤 라테",
+            "facts": "직접 제조한 밤 크림",
             "price": "6,500원",
             "period": "10월 한정",
             "purpose": "신메뉴 안내",
             "layout": "frame",
             "aspect": "portrait",
-            **change,
+            **changes,
         }
         response = client.post(
             "/posts",
             data=data,
-            files={"photo": ("cafenew2.jpg", photo, "image/png")},
+            files={"photo": ("menu.png", photo, "image/png")},
             follow_redirects=False,
         )
         assert response.status_code == 303, response.text
