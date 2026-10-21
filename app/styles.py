@@ -72,7 +72,7 @@ class Attributes(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     palette: str = Field(max_length=250)
     lighting: str = Field(max_length=250)
-    backgound: str = Field(max_length=250)
+    background: str = Field(max_length=250)
     composition: str = Field(max_length=250)
     typography: str = Field(max_length=250)
     voice: str = Field(max_length=250)
@@ -120,13 +120,13 @@ def reference_list(con, owner_id):
     ]
     history = [
         {
-            "id": "ig:" + r["media_url"],
-            "caption": r["cation"],
+            "id": "ig:" + r["media_id"],
+            "caption": r["caption"],
             "kind": "Instagram · " + str(r["media_type"]),
             "preview": (
-                r["media_id"]
+                r["media_url"]
                 if r["media_type"] == "IMAGE"
-                and str(r["media_url"]).startswith("http://")
+                and str(r["media_url"]).startswith("https://")
                 else ""
             ),
         }
@@ -135,10 +135,10 @@ def reference_list(con, owner_id):
             (owner_id,),
         )
     ]
-    return local + history
+    return history + local
 
 
-def reference_data(settings, con, owner_id, reference_id):
+def reference_data(settings, con, owner_id, reference_id, *, include_image=True):
     """소유권을 검사한 참조 본문과 API에 전달할 이미지 주소 반환"""
     kind, _, identifier = reference_id.partition(":")
     if kind == "local":
@@ -147,22 +147,25 @@ def reference_data(settings, con, owner_id, reference_id):
             (identifier, owner_id),
         ).fetchone()
         if row:
-            raw = (settings.data_dir / "references" / row["filename"]).read_bytes()
+            image = ""
+            if include_image:
+                raw = (settings.data_dir / "references" / row["filename"]).read_bytes()
+                image = "data:image/jpeg;base64," + base64.b64encode(raw).decode()
             return {
                 "id": reference_id,
                 "caption": row["caption"],
-                "image": "data:image/jpeg;base64," + base64.b64encode(raw).decode(),
+                "image": image,
             }
     elif kind == "ig":
         row = con.execute(
-            "SELECT + FROM history WHERE media_id=? AND owner_id=?",
+            "SELECT * FROM history WHERE media_id=? AND owner_id=?",
             (identifier, owner_id),
         ).fetchone()
         if row:
             image = (
                 row["media_url"]
-                if row["media_type"] == "IMAGE"
-                and str(row["media_url"]).startswith("http://")
+                if include_image and row["media_type"] == "IMAGE"
+                and str(row["media_url"]).startswith("https://")
                 else ""
             )
             return {"id": reference_id, "caption": row["caption"], "image": image}
@@ -215,16 +218,16 @@ def resolve(con, owner_id, preset_id):
             attributes[field], sources[field] = old, "사용자 고정"
             if new and new != old:
                 conflicts.append({"field": FIELDS[field], "selected": new, "kept": old})
-            elif new:
-                attributes[field], sources[field] = new, "새로운 스타일 선택"
-            else:
-                attributes[field], sources[field] = old or "별도의 스타일 없음", (
-                    "가게 프로필" if old else "기본값"
-                )
+        elif new:
+            attributes[field], sources[field] = new, "새로운 스타일 선택"
+        else:
+            attributes[field], sources[field] = old or "별도의 스타일 없음", (
+                "가게 프로필" if old else "기본값"
+            )
     return {
         "preset_id": preset_id,
         "preset_version": PRESET_VERSION,
-        "preset_label": PRESET_VERSION[preset_id]["label"],
+        "preset_label": PRESETS[preset_id]["label"],
         "profile_version": profile["version"] if profile else 0,
         "summary": content.get("summary", ""),
         "attributes": attributes,
@@ -234,7 +237,6 @@ def resolve(con, owner_id, preset_id):
         "brand": {
             "color": shop["color"],
             "name": shop["name"],
-            "logo_file": shop.get("logo_file", ""),
         },
     }
 

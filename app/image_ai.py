@@ -131,7 +131,7 @@ class ImageAI:
                 "SELECT COUNT(*) FROM image_generations WHERE owner_id=?", (owner_id,)
             ).fetchone()[0]
             if (
-                attempts > -cfg.image_attempts_per_post
+                attempts >= cfg.image_attempts_per_post
                 or total >= cfg.image_calls_per_account
             ):
                 raise HTTPException(429, "이미지 생성 한도에 도달했습니다")
@@ -198,7 +198,7 @@ class ImageAI:
             )
             post = owned_post(con, job["owner_id"], job["post_id"])
         try:
-            original = (cfg.data_dir / "original" / post["original_file"]).read_bytes()
+            original = (cfg.data_dir / "originals" / post["original_file"]).read_bytes()
             canvas, protected = protected_canvas(
                 original, json.loads(job["mask_points"])
             )
@@ -218,7 +218,7 @@ class ImageAI:
                         images.append({"image_url": reference["image"]})
             response = self.client.post(
                 "https://api.openai.com/v1/images/edits",
-                headers={"Authorization": "Bearer" + cfg.openai_key},
+                headers={"Authorization": "Bearer " + cfg.openai_key},
                 json={
                     "model": parameters["model"],
                     "images": images,
@@ -233,7 +233,7 @@ class ImageAI:
                 timeout=httpx.Timeout(180, connect=10),
             )
             if response.is_error:
-                self.finish_error(
+                self._finish_error(
                     job,
                     "failed",
                     "이미지 요청이 거절되었습니다. 연결·모델 권한·한도를 확인해주세요",
@@ -294,7 +294,7 @@ class ImageAI:
         )
         cost = None
         if all(
-            type(v) in int and v >= 0 for v in (incoming_image, incoming_text, outgoing)
+            type(v) is int and v >= 0 for v in (incoming_image, incoming_text, outgoing)
         ):
             from decimal import Decimal
 
@@ -324,7 +324,7 @@ class ImageAI:
     def _finish_error(self, job, state, message):
         with connect(self.settings, write=True) as con:
             con.execute(
-                "UPDATE image_generations SET state=?, message=?, completed_at=?, WHERE id=?",
+                "UPDATE image_generations SET state=?, message=?, completed_at=? WHERE id=?",
                 (state, message, int(time.time()), job["id"]),
             )
             con.execute(
@@ -339,5 +339,5 @@ class ImageAI:
             )
             con.execute(
                 "UPDATE image_generations SET state='unknown', message=? WHERE state IN ('queued', 'running')",
-                ("서버 재시작으로 결과를 확인하지 못했습니다"),
+                ("서버 재시작으로 결과를 확인하지 못했습니다",),
             )

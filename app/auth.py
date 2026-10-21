@@ -11,6 +11,19 @@ from fastapi import HTTPException, Request
 from .db import account, connect, ensure_account
 
 
+def owner(request: Request):
+    settings = request.app.state.settings
+    identifier = request.session.get("owner_id")
+    if settings.environment == "local":
+        identifier = "local-owner"
+        request.session["owner_id"] = identifier
+        with connect(settings, write=True) as con:
+            ensure_account(con, identifier)
+    if not identifier or not account(settings, identifier):
+        raise HTTPException(401, "먼저 Instagram 계정을 연결해주세요")
+    return identifier
+
+
 def csrf_token(request):
     if "csrf" not in request.session:
         request.session["csrf"] = secrets.token_urlsafe(32)
@@ -49,7 +62,7 @@ def authorization_url(request):
     return "https://www.instagram.com/oauth/authorize?" + urlencode(
         {
             "client_id": settings.instagram_app_id,
-            "redirect_url": settings.redirect_url,
+            "redirect_uri": settings.redirect_url,
             "response_type": "code",
             "state": state,
             "enable_fb_login": "0",

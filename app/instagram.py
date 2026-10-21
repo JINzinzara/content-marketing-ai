@@ -51,7 +51,7 @@ class Instagram:
                 if isinstance(body.get("error"), dict)
                 else None
             )
-            if code == 190 or response.status_code == 403:
+            if code == 190 or response.status_code == 401:
                 raise InstagramError(
                     "Instagram 연결이 만료되었습니다. 계정을 다시 연결해주세요",
                     kind="auth",
@@ -78,15 +78,15 @@ class Instagram:
             **kwargs,
         )
 
-    def exchage_code(self, code):
+    def exchange_code(self, code):
         short = self.request(
             "POST",
             "https://api.instagram.com/oauth/access_token",
             data={
-                "cliend_id": self.settings.instagram_app_id,
+                "client_id": self.settings.instagram_app_id,
                 "client_secret": self.settings.instagram_app_secret,
                 "grant_type": "authorization_code",
-                "redirect_url": self.settings.redirect_url,
+                "redirect_uri": self.settings.redirect_url,
                 "code": code.removesuffix("#_"),
             },
         )
@@ -97,11 +97,11 @@ class Instagram:
             "https://graph.instagram.com/access_token",
             params={
                 "grant_type": "ig_exchange_token",
-                "client": self.settings.instagram_app_secret,
+                "client_secret": self.settings.instagram_app_secret,
                 "access_token": short["access_token"],
             },
         )
-        if not long.get("access_token") or not isinstance(long.get("expires_int"), int):
+        if not long.get("access_token") or not isinstance(long.get("expires_in"), int):
             raise InstagramError("Instagram 장기 연결을 완료하지 못했습니다")
         me = self.graph(
             "GET", "me", long["access_token"], params={"fields": "user_id,username"}
@@ -133,7 +133,7 @@ class Instagram:
                 (
                     ig_id,
                     me["username"],
-                    encrypt(self.settings, long["access_toekn"]),
+                    encrypt(self.settings, long["access_token"]),
                     now,
                     now + long["expires_in"],
                     owner_id,
@@ -172,7 +172,7 @@ class Instagram:
             token = refreshed["access_token"]
             with connect(self.settings, write=True) as con:
                 con.execute(
-                    "UPDATE accounts SET token=?, token_issues_at=?, token_expires_at=? WHERE id=?",
+                    "UPDATE accounts SET token=?, token_issued_at=?, token_expires_at=? WHERE id=?",
                     (
                         encrypt(self.settings, token),
                         now,
@@ -198,7 +198,7 @@ class Instagram:
                 if not item.get("id"):
                     continue
                 con.execute(
-                    """NSERT INTO history(owner_id, media_id, caption, media_type, media_url, thumbnail_url, published_at, permalink)
+                    """INSERT INTO history(owner_id, media_id, caption, media_type, media_url, thumbnail_url, published_at, permalink)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(owner_id, media_id) DO UPDATE SET
                     caption=excluded.caption, media_type=excluded.media_type, media_url=excluded.media_url,
                     thumbnail_url=excluded.thumbnail_url, published_at=COALESCE(excluded.published_at, history.published_at), permalink=excluded.permalink""",
@@ -340,7 +340,7 @@ class Instagram:
             if status != "FINISHED":
                 with connect(self.settings, write=True) as con:
                     con.execute(
-                        "UPTDATE posts SET publish_massege? WHERE id=?",
+                        "UPDATE posts SET publish_message=? WHERE id=?",
                         (
                             "Instagram에서 이미지 처리 중입니다. 잠시 후 게시 상태 확인을 눌러주세요",
                             post_id,

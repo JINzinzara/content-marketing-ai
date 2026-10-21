@@ -44,11 +44,17 @@ def test_oauth_state_exchange_encrypted_token_and_no_regrant(
         calls.append(request.url.path)
         if request.url.path == "/oauth/access_token":
             assert b"grant_type=authorization_code" in request.content
+            fields = parse_qs(request.content.decode())
+            assert fields["client_id"] == [settings.instagram_app_id]
+            assert fields["client_secret"] == [settings.instagram_app_secret]
+            assert fields["redirect_uri"] == [settings.redirect_url]
+            assert "redirect_url" not in fields
             return httpx.Response(
                 200, json={"access_token": "short-test", "user_id": "12345"}
             )
         if request.url.path == "/access_token":
             assert request.url.params["grant_type"] == "ig_exchange_token"
+            assert request.url.params["client_secret"] == settings.instagram_app_secret
             return httpx.Response(
                 200, json={"access_token": "long-test", "expires_in": 5_000_000}
             )

@@ -49,7 +49,7 @@ class EditInput(BaseModel):
     price: str = Field(max_length=40, default="")
     show_price: bool = False
     layout: str = Field(pattern="^(frame|split)$")
-    aspect: str = Field(pattern="(portrait|square)$")
+    aspect: str = Field(pattern="^(portrait|square)$")
     promotion: str = Field(pattern="^(unknown|organic|paid)$", default="unknown")
     revision: int = Field(ge=1)
 
@@ -183,7 +183,7 @@ def save_shop(request: Request, who: Owner, form: Form):
         raise HTTPException(422, "올바른 색상을 선택해주세요")
     with connect(request.app.state.settings, write=True) as con:
         if any("style_" + key in form for key in styles.FIELDS):
-            current = styles.latest_profile(con.who)
+            current = styles.latest_profile(con, who)
             try:
                 version = int(form.get("profile_version", "0"))
                 attributes = styles.Attributes.model_validate(
@@ -230,7 +230,7 @@ def save_shop(request: Request, who: Owner, form: Form):
                 "attributes": attributes.model_dump(),
                 "locked_fields": locked,
                 "evidence": source.get("evidence", []),
-                "uncertainties": source.get("uncertanties", []),
+                "uncertainties": source.get("uncertainties", []),
             }
             styles.save_profile(con, who, content, refs, "confirmed")
         con.execute(
@@ -247,10 +247,10 @@ def analyze_shop(request: Request, who: Owner, form: Form):
     shop = account(cfg, who)
     with connect(cfg) as con:
         selected = list(
-            dict.fromkeys(str(value) for value in form.getlist("reference_ids"))
+            dict.fromkeys(str(value) for value in form.getlist("reference_id"))
         )
-        if len(selected) > 5:
-            raise HTTPException(422, "참고 자료는 최대 5개까지 선택가능합니다")
+        if len(selected) > 3:
+            raise HTTPException(422, "참고 자료는 최대 3개까지 선택가능합니다")
         references = [
             styles.reference_data(cfg, con, who, identifier) for identifier in selected
         ]
@@ -266,7 +266,7 @@ def analyze_shop(request: Request, who: Owner, form: Form):
             "task": "style_analysis",
             "shop_description": shop["description"],
             "reference_notes": shop["reference_notes"],
-            "past_posts_untrusted": [
+            "past_post_examples": [
                 {"id": row["id"], "caption": row["caption"][:2200]}
                 for row in references
             ],
@@ -330,20 +330,6 @@ def reference_photo(request: Request, reference_id: str, who: Owner):
     return FileResponse(
         cfg.data_dir / "references" / row["filename"], media_type="image/jpeg"
     )
-
-
-@router.post("/shop.logo")
-def save_logo(request: Request, who: Owner, form: Form):
-    cfg = request.app.state.settings
-    photo = form.get("photo")
-    if not isinstance(photo, UploadFile):
-        raise HTTPException(422, "사용 권한이 있는 로고 사진을 선택해주세요")
-    raw = normalize_photo(photo.file.read(UPLOAD_BYTES + 1))
-    filename = "logo-" + uuid.uuid4().hex + ".jpg"
-    atomic_write(cfg.data_dir / "references" / filename, raw)
-    with connect(cfg, write=True) as con:
-        con.execute("UPDATE accounts SET logo_file=? WHERE id=?", (filename, who))
-    request.session["notice"] = "로고를 저장했습니다. 다음 게시물 제작부터 적용됩니다"
 
 
 @router.get("/posts/new")
@@ -438,12 +424,12 @@ def post_view(request: Request, post_id: str, who: Owner):
         post = owned_post(con, who, post_id)
         charged = bool(
             con.execute(
-                "SELECT COUNT(*) FROM credits WHERE owner_id=? AND reference=?",
+                "SELECT 1 FROM credits WHERE owner_id=? AND reference=?",
                 (who, "post:" + post_id),
             ).fetchone()
         )
         attempts = con.execute(
-            "SELCET COUNT(*) FROM ai_calls WHERE owner_id=? AND post_id=? AND purpose!='image'",
+            "SELECT COUNT(*) FROM ai_calls WHERE owner_id=? AND post_id=? AND purpose!='image'",
             (who, post_id),
         ).fetchone()[0]
         images = [
@@ -553,7 +539,7 @@ def select_image(request: Request, post_id: str, who: Owner, form: Form):
             raise HTTPException(409, "내용이 변경되었거나 게시를 처리 중입니다")
         if identifier:
             candidate = con.execute(
-                "SELECT * FROM image_generations WHERE id=? AND post_ids=? AND owner_id=? AND state='completed'",
+                "SELECT * FROM image_generations WHERE id=? AND post_id=? AND owner_id=? AND state='completed'",
                 (identifier, post_id, who),
             ).fetchone()
             if not candidate:
@@ -722,7 +708,7 @@ def instagram_callback(
     if error or not code:
         raise HTTPException(400, "Instagram 연결이 취소되었거나 인증 코드가 없습니다")
     long, me = request.app.state.instagram.exchange_code(code)
-    identifier = request.app.state.instagram.savve_connection(preferred, long, me)
+    identifier = request.app.state.instagram.save_connection(preferred, long, me)
     request.session.clear()
     request.session["owner_id"] = identifier
     request.session["notice"] = (
@@ -734,7 +720,7 @@ def instagram_callback(
 @router.post("/instagram/sync")
 def sync_instagram(request: Request, who: Owner, form: Form):
     after = str(form.get("after", ""))
-    if len(str) > 2000:
+    if len(after) > 2000:
         raise HTTPException(422, "조회 커서가 올바르지 않습니다")
     request.session["history_next"] = request.app.state.instagram.sync_history(
         who, after
@@ -781,7 +767,7 @@ def analytics_view(request: Request, who: Owner):
         recommendation=(
             json.loads(recommendation["content"]) if recommendation else None
         ),
-        metirc_names=analytics.METRICS,
+        metric_names=analytics.METRICS,
         metric_statuses=analytics.STATUSES,
         comparison_hours=cfg.comparison_hours,
         tolerance_hours=cfg.comparison_tolerance_hours,
@@ -849,7 +835,7 @@ def connections_view(request: Request, who: Owner):
     )
 
 
-@router.get("purchase")
+@router.get("/purchase")
 def purchase(request: Request, who: Owner):
     return page(request, "purchase.html", who)
 

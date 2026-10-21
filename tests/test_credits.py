@@ -95,7 +95,8 @@ def test_restart_and_cookie_clear_do_not_regrant(settings, client, new_post, csr
     post_id = new_post()
     finalize(settings, "local-owner", post_id)
     with TestClient(create_app(settings)) as second:
-        assert "우리 가게의 콘텐츠" in second.get("/studio").text
+        response = second.get("/studio")
+        assert response.status_code == 200 and post_id in response.text
         assert second.get(f"/posts/{post_id}/download").status_code == 200
     with connect(settings) as con:
         assert balance(con, "local-owner") == 4

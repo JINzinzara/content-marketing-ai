@@ -38,7 +38,7 @@ def test_presets_combine_locked_fields_and_freeze_post_version(
         )
         assert snapshot["profile_version"] == profile["version"] == 1
         assert snapshot["attributes"]["palette"] == "브랜드 베이지"
-        assert snapshot["sources"]["palette"] == "가게에서 고정"
+        assert snapshot["sources"]["palette"] == "사용자 고정"
         assert snapshot["attributes"]["background"] == "단순한 배경, 소품 최소화"
         assert snapshot["attributes"]["voice"] == "짧은 존댓말"
         assert snapshot["conflicts"][0]["field"] == "색감"
@@ -71,7 +71,7 @@ def test_new_account_can_select_preset_without_claiming_history(
             owned_post(con, "local-owner", identifier)["style_snapshot"]
         )
         assert snapshot["profile_version"] == 0 and snapshot["reference_ids"] == []
-        assert snapshot["sources"]["background"] == "이번 스타일 선택"
+        assert snapshot["sources"]["background"] == "새로운 스타일 선택"
     assert (
         client.post(
             f"/posts/{identifier}/style",
@@ -179,34 +179,18 @@ def test_uploaded_references_selected_for_analysis_require_confirmation(
     assert "아직 확정하지 않은 AI 제안" not in client.get("/shop").text
 
 
-def test_reference_and_logo_are_private_and_logo_is_frozen(
+def test_logo_upload_is_removed_and_new_posts_ignore_legacy_account_logo(
     client, csrf, settings, new_post, photo
 ):
-    assert (
-        client.post(
-            "/shop/logo",
-            data={"csrf": csrf},
-            files={"photo": ("logo.png", photo, "image/png")},
-        ).status_code
-        == 200
-    )
+    assert client.post("/shop/logo", data={"csrf": csrf}, files={"photo": ("logo.png", photo, "image/png")}).status_code == 404
+    with connect(settings, write=True) as con:
+        con.execute("ALTER TABLE accounts ADD COLUMN logo_file TEXT NOT NULL DEFAULT ''")
+        con.execute("UPDATE accounts SET logo_file='legacy-logo.jpg' WHERE id='local-owner'")
     identifier = new_post()
     with connect(settings) as con:
-        before = json.loads(
-            owned_post(con, "local-owner", identifier)["style_snapshot"]
-        )["brand"]["logo_file"]
-    client.post(
-        "/shop/logo",
-        data={"csrf": csrf},
-        files={"photo": ("new.png", photo, "image/png")},
-    )
-    with connect(settings) as con:
-        assert (
-            json.loads(owned_post(con, "local-owner", identifier)["style_snapshot"])[
-                "brand"
-            ]["logo_file"]
-            == before
-        )
-        assert con.execute("SELECT logo_file FROM accounts").fetchone()[0] != before
-    assert client.get("/data/references/" + before).status_code == 404
+        brand = json.loads(owned_post(con, "local-owner", identifier)["style_snapshot"])["brand"]
+        assert "logo_file" not in brand
+        assert con.execute("SELECT logo_file FROM accounts").fetchone()[0] == "legacy-logo.jpg"
+    assert 'action="/shop/logo"' not in client.get("/shop").text
+    assert client.get("/data/references/legacy-logo.jpg").status_code == 404
     assert client.get("/posts/" + identifier + "/image").status_code == 200

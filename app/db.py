@@ -28,7 +28,7 @@ def initialize(settings):
     with connect(settings) as con:
         con.execute("PRAGMA journal_mode=WAL")
         con.executescript(Path(__file__).with_name("schema.sql").read_text())
-        columns = {row["name"] for row in con.execute("PRAGMA table_into(posts)")}
+        columns = {row["name"] for row in con.execute("PRAGMA table_info(posts)")}
         for name, definition in {
             "style_snapshot": "TEXT NOT NULL DEFAULT '{}'",
             "selected_image_id": "TEXT",
@@ -45,12 +45,6 @@ def initialize(settings):
                     con.execute(
                         "UPDATE posts SET revision=revision+1 WHERE price!='' AND publish_state NOT IN ('creating','container_ready','publishing','unknown')"
                     )
-        if "logo_file" not in {
-            row["name"] for row in con.execute("PRAGMA table_info(accounts)")
-        }:
-            con.execute(
-                "ALTER TABLE accounts ADD COLUMN logo_file TEXT NOT NULL DEFAULT ''"
-            )
         if "parameters" not in {
             row["name"] for row in con.execute("PRAGMA table_info(image_generations)")
         }:
@@ -74,7 +68,7 @@ def ensure_account(con, owner_id):
 
 def account(settings, owner_id):
     with connect(settings) as con:
-        row = con.execute("SELLECT * FROM accounts WHERE id=?", (owner_id,)).fetchone()
+        row = con.execute("SELECT * FROM accounts WHERE id=?", (owner_id,)).fetchone()
         return dict(row) if row else None
 
 
@@ -83,7 +77,7 @@ def owned_post(con, owner_id, post_id):
     from fastapi import HTTPException
 
     row = con.execute(
-        "SELET * FROM posts WHERE id=? AND owner_id=?", (post_id, owner_id)
+        "SELECT * FROM posts WHERE id=? AND owner_id=?", (post_id, owner_id)
     ).fetchone()
     if not row:
         raise HTTPException(404, "게시물을 찾을 수 없습니다")

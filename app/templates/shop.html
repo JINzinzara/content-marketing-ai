@@ -11,7 +11,7 @@
 {% if proposal %}<input type="hidden" name="proposal_version" value="{{ proposal.version }}">{% endif %}
 <label for="name">가게 이름 *</label><input id="name" name="name" value="{{ shop.name }}" maxlength="40" required>
 <label for="description">가게 소개</label><textarea id="description" name="description" rows="3" maxlength="1000">{{ shop.description }}</textarea>
-<label for="reference_notes">참고할 이전 게시물·소개 문구</label><textarea id="reference_notes" name="reference_notes" rows="3" maxlength="5000">{{ shop.reference_notes }}</textarea>
+<details><summary>기존 게시물에 덧붙일 설명 · 선택</summary><label for="reference_notes">추가로 참고할 문구</label><textarea id="reference_notes" name="reference_notes" rows="3" maxlength="5000">{{ shop.reference_notes }}</textarea></details>
 <label for="style">말투와 분위기 요약</label><textarea id="style" name="style" rows="3" maxlength="2400">{{ content.get('summary', shop.style) }}</textarea>
 {% for field, label in style_fields.items() %}
 <label for="style-{{ field }}">{{ label }}</label><input id="style-{{ field }}" name="style_{{ field }}" maxlength="250" value="{{ content.get('attributes', {}).get(field, '') }}" placeholder="확인한 특징을 적거나 모르면 비워두세요">
@@ -21,30 +21,25 @@
 {% if content.get('evidence') %}<details><summary>제안의 근거와 확인할 점</summary><ul>{% for item in content.evidence %}<li>{{ item }}</li>{% endfor %}{% for item in content.get('uncertainties', []) %}<li>미확인: {{ item }}</li>{% endfor %}</ul></details>{% endif %}
 <button class="button primary" type="submit">확인한 기준으로 저장</button>
 </form>
-<form action="/shop/logo" method="post" enctype="multipart/form-data" class="stack separate-form">
-<input type="hidden" name="csrf" value="{{ csrf }}"><label for="logo">가게 로고 {{ '· 저장됨' if shop.logo_file else '· 선택 사항' }}</label>
-<input id="logo" type="file" name="photo" accept="image/jpeg,image/png,image/webp" required>
-<small class="muted">사용 권한이 있는 로고를 올려주세요. 흰 배경으로 정리해 다음 게시물부터 같은 위치에 배치해요</small><button class="button secondary" type="submit">로고 저장</button>
-</form>
 </section>
 <div class="stack roomy"><section class="panel subtle">
-<h2>참고할 게시물</h2><p>가게를 가장 잘 보여주는 자료를 골라주세요.</p>
+<h2>Instagram 기존 게시물 분석</h2><p>연결한 계정의 게시물에서 가게가 유지해 온 색감·구도·말투를 확인해요.</p>
 {% if shop.connected %}<form action="/instagram/sync" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="button secondary" type="submit">기존 게시물 가져오기</button></form>{% else %}<a class="button secondary" href="/connections">Instagram 연결 준비</a>{% endif %}
 <form action="/shop/analyze" method="post" class="stack separate-form"><input type="hidden" name="csrf" value="{{ csrf }}">
 {% for item in references %}<label class="reference-choice"><input type="checkbox" name="reference_id" value="{{ item.id }}">
 {% if item.preview.startswith('/') %}<img src="{{ item.preview }}" alt="직접 제공한 참고 사진">{% endif %}
 <span><small>{{ item.kind }}</small>{{ item.caption[:180] or '본문 없는 사진' }}</span></label>
 {% else %}<p class="muted">이미지이 없으면 아래에서 직접 올리거나 저장한 가게 소개로 시작할 수 있어요</p>{% endfor %}
-<small class="muted">참고 자료는 최대 5개까지 입니다</small>
+<small class="muted">현재는 한 번에 최대 3개를 분석해요. 전체 이력 자동 분석은 아직 지원하지 않아요.</small>
 <button class="button secondary" type="submit" {% if not cfg.ai_ready %}disabled{% endif %}>선택한 자료로 스타일 제안 받기</button>
 </form>
 {% if next_cursor %}<form action="/instagram/sync" method="post" class="separate-form"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="after" value="{{ next_cursor }}"><button class="button secondary" type="submit">다음 게시물 가져오기</button></form>{% endif %}
-</section><section class="panel">
-<h2>참고 이미지 직접 추가</h2><p>계정 연동 전에도 이전 게시물 이미지를 올려 스타일 분석에 사용할 수 있어요</p>
+</section><details class="panel">
+<summary>연동 전·자료 보완을 위한 직접 추가 · 선택</summary><p>Instagram에서 가져온 게시물은 다시 올릴 필요 없어요.</p>
 <form action="/shop/references" method="post" enctype="multipart/form-data" class="stack">
 <input type="hidden" name="csrf" value="{{ csrf }}"><label for="reference-photo">참고 이미지</label><input id="reference-photo" type="file" name="photo" accept="image/jpeg,image/png,image/webp" required>
 <label for="reference-caption">함께 게시했던 문구</label><textarea id="reference-caption" name="caption" maxlength="2200" rows="3"></textarea>
 <button class="button secondary" type="submit">참고 자료 추가</button>
-</form></section></div>
+</form></details></div>
 </div>
 {% endblock %}

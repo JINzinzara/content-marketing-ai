@@ -12,7 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .ai import AI
+from .text_ai import TextAI
 from .config import Settings
 from .db import initialize
 from .instagram import Instagram, InstagramError
@@ -33,7 +33,7 @@ class BodyLimitMiddleware:
         limit = 10 * 1024 * 1024
         headers = dict(scope.get("headers", []))
         try:
-            declared = int(headers.get(b"content_length", b"0"))
+            declared = int(headers.get(b"content-length", b"0"))
         except ValueError:
             return await JSONResponse(
                 {"detail": "올바르지 않은 이미지 크기입니다"}, status_code=400
@@ -80,7 +80,7 @@ def create_app(settings=None, http_client=None):
     app.state.settings = cfg
     app.state.templates = Jinja2Templates(directory=APP_DIR / "templates")
     app.state.instagram = Instagram(cfg, client)
-    app.state.ai = AI(cfg, client)
+    app.state.ai = TextAI(cfg, client)
     app.state.image_ai = ImageAI(cfg, client)
     app.state.image_ai.recover()
     app.add_middleware(BodyLimitMiddleware)
