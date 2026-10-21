@@ -1,7 +1,7 @@
 {% extends 'base.html' %}{% block content %}
 <a class="back-link" href="/studio">← 작업실</a><div class="page-heading"><p class="eyebrow">CREATE A NEW STORY</p><h1>오늘 제작할 게시물은 무엇인가요?</h1><p>특징만 알려주세요</p></div>
 <div class="two-columns"><form class="panel stack" action="/posts" method="post" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf }}">
-<label for="photo">새 게시물 이미지 <span class="required">*</span></label><div class="upload-box"><span class="upload-symbol">↥</span><strong>상품 이미지르 선택해주세요</strong><span>JPEG · PNG · WebP / 최대 8MB</span><input type="file" name="photo" id="photo" accept="image/jpeg,image/png,image/webp" required><img id="local-photo" alt="업로드한 원본 사진" hidden></div><p id="file-message" class="muted" role="status"></p>
+<label for="photo">새 게시물 이미지 <span class="required">*</span></label><div class="upload-box"><span class="upload-symbol">↥</span><strong>상품 이미지를 선택해주세요</strong><span>JPEG · PNG · WebP / 최대 8MB</span><input type="file" name="photo" id="photo" accept="image/jpeg,image/png,image/webp" required><img id="local-photo" alt="업로드한 원본 사진" hidden></div><p id="file-message" class="muted" role="status"></p>
 <label for="product_name">상품명 <span class="required">*</span></label><input id="product_name" name="product_name" maxlength="60" placeholder="예: 가을 밤 라테" required>
 <label for="facts">확인된 상품 특징</label><textarea id="facts" name="facts" rows="4" maxlength="1200" placeholder="예: 직접 로스팅한 원두로 내린 핸드드립 커피. 강조하고 싶은 내용이 있다면 직젖 적어주세요"></textarea>
 <label for="period">판매 기간·조건 <span class="muted">선택</span></label><input id="period" name="period" maxlength="100" placeholder="예: 10월 한정 판매">
