@@ -1,0 +1,7 @@
+<!-- 준비한 도형 예시이며 스타일 선택만으로 API를 호출하지 않는다. -->
+<fieldset class="style-options"><legend>이번 게시물의 스타일</legend>
+{% for key, option in presets.items() %}
+<label class="style-option"><input type="radio" name="preset_id" value="{{ key }}" {% if (current_style.preset_id if current_style else 'keep') == key %}checked{% endif %} required>
+<span class="style-swatch swatch-{{ key }}" aria-hidden="true"><span></span></span><strong>{{ option.label }}</strong><small>{{ option.description }}</small></label>
+{% endfor %}
+</fieldset><small class="muted">미리 준비된 예시입니다. 실제 상품 결과가 아니며 선택만으로 AI를 호출하지 않아요</small>
