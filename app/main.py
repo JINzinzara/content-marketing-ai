@@ -16,6 +16,7 @@ from .ai import AI
 from .config import Settings
 from .db import initialize
 from .instagram import Instagram, InstagramError
+from .image_ai import ImageAI
 from .routes import page, router
 
 APP_DIR = Path(__file__).parent
@@ -71,7 +72,7 @@ def create_app(settings=None, http_client=None):
             client.close()
 
     app = FastAPI(
-        title="나만의 게시물 관리 서비스",
+        title="콘텐츠 관리 서비스",
         lifespan=lifespan,
         docs_url=None,
         redoc_url=None,
@@ -80,6 +81,8 @@ def create_app(settings=None, http_client=None):
     app.state.templates = Jinja2Templates(directory=APP_DIR / "templates")
     app.state.instagram = Instagram(cfg, client)
     app.state.ai = AI(cfg, client)
+    app.state.image_ai = ImageAI(cfg, client)
+    app.state.image_ai.recover()
     app.add_middleware(BodyLimitMiddleware)
     app.add_middleware(
         SessionMiddleware,
@@ -102,16 +105,15 @@ def create_app(settings=None, http_client=None):
             )
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["Referrer-Policy"] = (
-            "efault-src 'self'; "
-            "img-src 'self' data: blob:; style-src 'self'; script-src 'self'; "
-            "frame-ancestors 'none'; form-action 'self'"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; img-src 'self' data: blob:; style-src 'self'; script-src 'self'; frame-ancestors 'none'; form-action 'self'"
         )
         if not request.url.path.startswith("/static/"):
             response.headers["Cache-Control"] = "no-store"
         return response
 
-    @app.execution_handler(StarletteHTTPException)
+    @app.exception_handler(StarletteHTTPException)
     async def handle_http(request, exc):
         if "text/html" not in request.headers.get("accept", ""):
             return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
@@ -125,7 +127,7 @@ def create_app(settings=None, http_client=None):
         result.status_code = exc.status_code
         return result
 
-    @app.execution_handler(InstagramError)
+    @app.exception_handler(InstagramError)
     async def handle_instagram(request, exc):
         return await handle_http(request, HTTPException(502, str(exc)))
 
