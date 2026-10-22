@@ -235,10 +235,10 @@ class TextAI:
         style = post_style(post)
         with connect(self.settings) as con:
             examples = [
-                reference_data(self.settings, con, owner_id, identifier, include_image=False)
+                reference_data(self.settings, con, owner_id, identifier, include_image=False, skip_deleted=True)
                 for identifier in style.get("reference_ids", [])
             ]
-        examples = [{"id": row["id"], "caption": row["caption"][:2200]} for row in examples]
+        examples = [{"id": row["id"], "caption": row["caption"][:2200]} for row in examples if row]
         result = self.generate(
             owner_id,
             "draft",

@@ -110,7 +110,7 @@ def test_draft_uses_owned_caption_examples_and_new_product_photo(app, client, cs
         save_profile(con, "local-owner", {"summary": "짧고 편안한 존댓말", "attributes": {key: "" for key in FIELDS},
                      "locked_fields": []}, [reference], "confirmed")
         ensure_account(con, "another")
-        con.execute("INSERT INTO style_references VALUES ('foreign', 'another', 'not-read.jpg', '다른 가게의 비공개 본문', 1)")
+        con.execute("INSERT INTO style_references(id, owner_id, filename, caption, created_at) VALUES ('foreign', 'another', 'not-read.jpg', '다른 가게의 비공개 본문', 1)")
     identifier = new_post(facts="")
     enable(settings)
     calls = []

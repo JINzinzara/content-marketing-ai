@@ -34,7 +34,7 @@ def test_progress_uses_matching_history_without_starting_requests(app, client, n
     assert second["state"] == "running" and second["elapsed_seconds"] == 7
     assert set(second) == {"id", "state", "message", "created_at", "elapsed_seconds", "expected_seconds", "sample_count"}
     html = client.get(f"/posts/{current}").text
-    assert 'data-state="running"' in html and 'class="spinner"' in html and "이전 1건 기준 약 40초" in html
+    assert 'data-state="running"' in html and 'class="spinner"' in html and "약 40초 · 참고용" in html
     assert client.get(f"/posts/{foreign}/image-progress").status_code == 404
     assert client.get("/posts/missing/image-progress").status_code == 404
     with connect(settings) as con:
@@ -49,3 +49,20 @@ def test_first_image_has_no_invented_time_estimate(app, client, new_post, settin
     app.state.image_ai.queue("local-owner", identifier, 1, [[0, 0], [1, 0], [0, 1]])
     job = client.get(f"/posts/{identifier}/image-progress").json()["job"]
     assert job["expected_seconds"] is None and job["sample_count"] == 0
+
+
+def test_generation_limit_is_visible_and_uses_the_same_rule_as_queue(app, client, new_post, settings):
+    from fastapi import HTTPException
+    import pytest
+    from test_image_generation import enable_image
+
+    identifier = new_post(preset_id="natural")
+    enable_image(settings)
+    settings.image_attempts_per_post = 1
+    app.state.image_ai.queue("local-owner", identifier, 1, [[0, 0], [1, 0], [0, 1]])
+    with connect(settings, write=True) as con:
+        con.execute("UPDATE image_generations SET state='failed'")
+    assert "게시물 생성 한도 도달" in client.get(f"/posts/{identifier}").text
+    with pytest.raises(HTTPException) as exc:
+        app.state.image_ai.queue("local-owner", identifier, 1, [[0, 0], [1, 0], [0, 1]])
+    assert exc.value.status_code == 429 and exc.value.detail == "게시물 생성 한도 도달"

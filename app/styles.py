@@ -20,7 +20,7 @@ PRESET_VERSION = 1
 PRESETS = {
     "keep": {
         "label": "우리 가게 분위기·스타일",
-        "description": "확정한 가게의 스타일 기준으로 제작해요",
+        "description": "기존 분위기 유지",
         "attributes": {},
     },
     "natural": {
@@ -114,7 +114,7 @@ def reference_list(con, owner_id):
             "preview": "/shop/references/" + r["id"],
         }
         for r in con.execute(
-            "SELECT * FROM style_references WHERE owner_id=? ORDER BY created_at DESC, rowid DESC LIMIT 30",
+            "SELECT * FROM style_references WHERE owner_id=? AND deleted_at IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 30",
             (owner_id,),
         )
     ]
@@ -131,14 +131,14 @@ def reference_list(con, owner_id):
             ),
         }
         for r in con.execute(
-            "SELECT * FROM history WHERE owner_id=? ORDER BY published_at DESC LIMIT 50",
+            "SELECT * FROM history WHERE owner_id=? AND deleted_at IS NULL ORDER BY published_at DESC LIMIT 50",
             (owner_id,),
         )
     ]
     return history + local
 
 
-def reference_data(settings, con, owner_id, reference_id, *, include_image=True):
+def reference_data(settings, con, owner_id, reference_id, *, include_image=True, skip_deleted=False):
     """소유권을 검사한 참조 본문과 API에 전달할 이미지 주소 반환"""
     kind, _, identifier = reference_id.partition(":")
     if kind == "local":
@@ -146,6 +146,10 @@ def reference_data(settings, con, owner_id, reference_id, *, include_image=True)
             "SELECT * FROM style_references WHERE id=? AND owner_id=?",
             (identifier, owner_id),
         ).fetchone()
+        if row and row["deleted_at"] is not None:
+            if skip_deleted:
+                return None
+            row = None
         if row:
             image = ""
             if include_image:
@@ -161,6 +165,10 @@ def reference_data(settings, con, owner_id, reference_id, *, include_image=True)
             "SELECT * FROM history WHERE media_id=? AND owner_id=?",
             (identifier, owner_id),
         ).fetchone()
+        if row and row["deleted_at"] is not None:
+            if skip_deleted:
+                return None
+            row = None
         if row:
             image = (
                 row["media_url"]

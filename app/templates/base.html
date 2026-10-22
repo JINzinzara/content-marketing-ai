@@ -17,7 +17,7 @@
     </nav>
     <div class="sidebar-bottom">
       <div class="quota-label">남은 무료 완성본 <strong>{{ remaining }}<small> / 5</small></strong></div>
-      <p>완성본을 처음 확정할 때 1건 사용해요</p><a class="text-link" href="/purchase">이용 정책 보기 ↗</a>
+      <p>첫 확정 시 1건 차감</p><a class="text-link" href="/purchase">이용 정책 보기 ↗</a>
       {% if cfg.local %}<div class="local-tag">내 PC에서 실행 중</div>{% endif %}
     </div>
   </aside>
@@ -27,6 +27,6 @@
       {% if notice %}<div class="notice" role="status">{{ notice }}</div>{% endif %}
       {% block content %}{% endblock %}
     </main>
-    <footer>뽀스팅 · 간편하게 게시물을 작성하고, 가게를 홍보하세요</footer>
+    <footer>뽀스팅 · 가게의 이야기</footer>
   </div>
 </body></html>

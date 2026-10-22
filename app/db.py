@@ -33,6 +33,7 @@ def initialize(settings):
             "style_snapshot": "TEXT NOT NULL DEFAULT '{}'",
             "selected_image_id": "TEXT",
             "show_price": "INTEGER NOT NULL DEFAULT 0 CHECK(show_price IN (0,1))",
+            "deleted_at": "INTEGER",
         }.items():
             if name not in columns:
                 con.execute(f"ALTER TABLE posts ADD COLUMN {name} {definition}")
@@ -51,7 +52,13 @@ def initialize(settings):
             con.execute(
                 "ALTER TABLE image_generations ADD COLUMN parameters TEXT NOT NULL DEFAULT '{}'"
             )
-        con.execute("PRAGMA user_version=3")
+        for table in ("style_references", "history"):
+            if "deleted_at" not in {row["name"] for row in con.execute(f"PRAGMA table_info({table})")}:
+                con.execute(f"ALTER TABLE {table} ADD COLUMN deleted_at INTEGER")
+        if con.execute("PRAGMA user_version").fetchone()[0] < 4:
+            # 제목을 빼기 전 완성본을 새 미리보기와 같은 파일로 취급하지 않는다.
+            con.execute("UPDATE posts SET revision=revision+1 WHERE finished_file IS NOT NULL AND publish_state NOT IN ('creating','container_ready','publishing','unknown')")
+        con.execute("PRAGMA user_version=4")
 
 
 def ensure_account(con, owner_id):
@@ -77,7 +84,7 @@ def owned_post(con, owner_id, post_id):
     from fastapi import HTTPException
 
     row = con.execute(
-        "SELECT * FROM posts WHERE id=? AND owner_id=?", (post_id, owner_id)
+        "SELECT * FROM posts WHERE id=? AND owner_id=? AND deleted_at IS NULL", (post_id, owner_id)
     ).fetchone()
     if not row:
         raise HTTPException(404, "게시물을 찾을 수 없습니다")

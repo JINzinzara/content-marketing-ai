@@ -82,7 +82,7 @@ def test_edit_sends_only_selected_product_without_background_or_reference_produc
     with connect(settings, write=True) as con:
         snapshot = json.loads(owned_post(con, "local-owner", identifier)["style_snapshot"])
         snapshot["reference_ids"] = ["local:past-menu"]
-        con.execute("INSERT INTO style_references VALUES ('past-menu','local-owner','not-read.jpg','휘낭시에 사진',0)")
+        con.execute("INSERT INTO style_references(id, owner_id, filename, caption, created_at) VALUES ('past-menu','local-owner','not-read.jpg','휘낭시에 사진',0)")
         con.execute("UPDATE posts SET style_snapshot=? WHERE id=?", (json.dumps(snapshot), identifier))
 
     def handler(request):

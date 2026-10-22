@@ -47,7 +47,7 @@ def test_existing_database_is_upgraded_without_losing_rows_or_trial_history(tmp_
             and post["show_price"] == 0
             and balance(con, "existing") == 4
         )
-        assert post["revision"] == 2 and post["rendered_revision"] == 1
+        assert post["revision"] == 3 and post["rendered_revision"] == 1
         assert post["finished_file"] == "old-final.jpg" and post["caption"] == "본문"
         pending = owned_post(con, "existing", "pending")
         assert (
@@ -56,4 +56,4 @@ def test_existing_database_is_upgraded_without_losing_rows_or_trial_history(tmp_
             and pending["publish_state"] == "publishing"
         )
         assert con.execute("SELECT COUNT(*) FROM credits").fetchone()[0] == 2
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 4
