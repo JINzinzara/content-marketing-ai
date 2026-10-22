@@ -12,6 +12,11 @@ document.addEventListener('submit', event => {
       document.getElementById('mask-editor').focus();
       return;
     }
+    if (form.id === 'image-generation' && document.getElementById('mask-mode')?.value === 'auto' && !document.getElementById('mask-png').value) {
+      event.preventDefault();
+      document.getElementById('mask-message').textContent = '상품 자동 선택을 누르고 분리된 상품을 확인해주세요';
+      return;
+    }
     if (form.dataset.submitting) { event.preventDefault(); return; }
     form.dataset.submitting = 'yes';
     form.setAttribute('aria-busy', 'true');
@@ -57,7 +62,18 @@ const maskCanvas = document.getElementById('mask-editor');
 const maskSource = document.getElementById('mask-source');
 if (maskCanvas && maskSource) {
   const context = maskCanvas.getContext('2d');
+  const mode = document.getElementById('mask-mode');
+  const maskInput = document.getElementById('mask-png');
+  const cutout = document.getElementById('mask-cutout');
+  const message = document.getElementById('mask-message');
+  const segmentButton = document.getElementById('segment-product');
+  let selectionVersion = 0;
   let points = [], cursor = [0.5, 0.5], keyboard = false;
+  function clearAutomaticMask() {
+    selectionVersion++;
+    maskInput.value = ''; cutout.hidden = true;
+    document.querySelector('#image-generation input[name="confirmed"]').checked = false;
+  }
   function drawMask() {
     if (!maskSource.complete || !maskSource.naturalWidth) return;
     context.drawImage(maskSource, 0, 0, maskCanvas.width, maskCanvas.height);
@@ -74,9 +90,21 @@ if (maskCanvas && maskSource) {
       context.strokeStyle = '#e46933'; context.lineWidth = 3; context.strokeRect(x - 6, y - 6, 12, 12);
     }
     document.getElementById('mask-points').value = JSON.stringify(points);
-    document.getElementById('mask-message').textContent = `${points.length}개 점 · 선택한 안쪽을 보존합니다. 경계를 확인해주세요.`;
+    message.textContent = mode.value === 'auto'
+      ? (points.length === 4 ? '영역을 지정했어요. 상품 자동 선택을 눌러주세요.' : '상품 전체가 들어오는 사각형의 양 끝을 눌러주세요.')
+      : `${points.length}개 점 · 선택한 안쪽을 보존합니다. 경계를 확인해주세요.`;
   }
-  function addPoint(point) { if (points.length < 80) points.push(point); drawMask(); }
+  function addPoint(point) {
+    clearAutomaticMask();
+    if (mode.value === 'auto') {
+      if (points.length !== 1) points = [point];
+      else {
+        const [a, b] = points[0], [x, y] = point;
+        points = [[Math.min(a,x), Math.min(b,y)], [Math.max(a,x), Math.min(b,y)], [Math.max(a,x), Math.max(b,y)], [Math.min(a,x), Math.max(b,y)]];
+      }
+    } else if (points.length < 80) points.push(point);
+    drawMask();
+  }
   function ready() {
     maskCanvas.width = Math.min(maskSource.naturalWidth, 960);
     maskCanvas.height = Math.round(maskCanvas.width * maskSource.naturalHeight / maskSource.naturalWidth);
@@ -92,10 +120,37 @@ if (maskCanvas && maskSource) {
     const movement = { ArrowLeft: [-0.02, 0], ArrowRight: [0.02, 0], ArrowUp: [0, -0.02], ArrowDown: [0, 0.02] }[event.key];
     if (movement) { event.preventDefault(); keyboard = true; cursor = cursor.map((value, index) => Math.max(0, Math.min(1, value + movement[index]))); drawMask(); }
     if (event.key === 'Enter') { event.preventDefault(); addPoint([...cursor]); }
-    if (event.key === 'Backspace') { event.preventDefault(); points.pop(); drawMask(); }
+    if (event.key === 'Backspace') { event.preventDefault(); clearAutomaticMask(); points.pop(); drawMask(); }
   });
-  document.getElementById('mask-undo').addEventListener('click', () => { points.pop(); drawMask(); });
-  document.getElementById('mask-reset').addEventListener('click', () => { points = []; drawMask(); });
+  document.getElementById('mask-undo').addEventListener('click', () => { clearAutomaticMask(); points.pop(); drawMask(); });
+  document.getElementById('mask-reset').addEventListener('click', () => { clearAutomaticMask(); points = []; drawMask(); });
+  mode.addEventListener('change', () => { clearAutomaticMask(); points = []; drawMask(); });
+  segmentButton.addEventListener('click', async () => {
+    if (mode.value !== 'auto' || points.length !== 4) { message.textContent = '자동 선택 모드에서 상품 전체가 들어오는 상자를 먼저 지정해주세요'; return; }
+    const version = selectionVersion;
+    const form = document.getElementById('image-generation');
+    const data = new FormData();
+    for (const name of ['csrf', 'revision', 'mask_points']) data.set(name, form.elements[name].value);
+    segmentButton.disabled = true; segmentButton.setAttribute('aria-busy', 'true');
+    document.getElementById('segment-spinner').hidden = false;
+    message.textContent = '상품을 분리하고 있어요. 처음에는 모델을 불러오는 시간이 필요해요.';
+    try {
+      const response = await fetch(segmentButton.dataset.url, {method:'POST', body:data, headers:{'Accept':'application/json'}});
+      const body = await response.json();
+      if (version !== selectionVersion) return;
+      if (!response.ok) throw new Error(body.detail || '상품을 선택하지 못했습니다');
+      maskInput.value = body.mask_png;
+      document.querySelector('#image-generation input[name="confirmed"]').checked = false;
+      document.getElementById('mask-cutout-image').src = 'data:image/png;base64,' + body.preview_png;
+      cutout.hidden = false;
+      message.textContent = '자동으로 분리했어요. 아래 미리보기에서 상품 전체와 경계를 확인한 뒤 이미지를 생성해주세요.';
+    } catch (error) {
+      if (version === selectionVersion) { maskInput.value = ''; cutout.hidden = true; message.textContent = error.message + ' 영역을 다시 지정하거나 수동 경계를 사용해주세요.'; }
+    } finally {
+      segmentButton.disabled = false; segmentButton.removeAttribute('aria-busy');
+      document.getElementById('segment-spinner').hidden = true;
+    }
+  });
 }
 
 // 본문·해시태그 수정은 로컬 미리보기만 바꾸며 AI를 다시 호출하지 않는다.

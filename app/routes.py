@@ -20,6 +20,8 @@ from .db import account, balance, connect, owned_post
 from .costs import spent
 from .instagram import caption_text
 from .rendering import UPLOAD_BYTES, atomic_write, normalize_photo, render
+from .image_ai import mask_points, protected_canvas
+from .segmentation import encode_mask
 
 router = APIRouter()
 Owner = Annotated[str, Depends(owner)]
@@ -451,6 +453,7 @@ def post_view(request: Request, post_id: str, who: Owner):
         presets=styles.PRESETS,
         image_limit=request.app.state.settings.image_attempts_per_post,
         image_progress=request.app.state.image_ai.progress(who, post_id),
+        segmentation_ready=request.app.state.segmenter.ready,
         current_style=styles.post_style(post),
         style_fields=styles.FIELDS,
         image_busy=any(
@@ -493,12 +496,29 @@ def generate_image(
 ):
     revision = confirmed(form)
     job = request.app.state.image_ai.queue(
-        who, post_id, revision, str(form.get("mask_points", ""))
+        who, post_id, revision, str(form.get("mask_points", "")), str(form.get("mask_png", ""))
     )
     tasks.add_task(request.app.state.image_ai.run, job)
     if "application/json" in request.headers.get("accept", ""):
         return JSONResponse({"job_id": job}, status_code=202)
     return back("/posts/" + post_id)
+
+
+@router.post("/posts/{post_id}/product-mask")
+def product_mask(request: Request, post_id: str, who: Owner, form: Form):
+    """소유자 사진의 상품 마스크를 로컬에서 계산한다. 유료 API·제작권 사용 없음."""
+    cfg = request.app.state.settings
+    with connect(cfg) as con:
+        post = owned_post(con, who, post_id)
+    if str(post["revision"]) != str(form.get("revision", "")):
+        raise HTTPException(409, "게시물이 변경되었습니다. 새로고침 후 다시 선택해주세요")
+    points = mask_points(str(form.get("mask_points", "")))
+    raw = (cfg.data_dir / "originals" / post["original_file"]).read_bytes()
+    canvas, region = protected_canvas(raw, points)
+    mask = request.app.state.segmenter.extract(canvas, region.getbbox())
+    preview = canvas.convert("RGBA")
+    preview.putalpha(mask)
+    return {"mask_png": encode_mask(mask), "preview_png": encode_mask(preview)}
 
 
 @router.get("/posts/{post_id}/image-progress")

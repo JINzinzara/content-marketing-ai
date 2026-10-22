@@ -10,15 +10,21 @@
 <dl class="style-details">{% for field, label in style_fields.items() %}<div><dt>{{ label }}</dt><dd>{{ current_style.attributes.get(field, '') }} <small>{{ current_style.sources.get(field, '') }}</small></dd></div>{% endfor %}</dl>
 {% for conflict in current_style.conflicts %}<p class="conflict-note">{{ conflict.field }}: 선택의 ‘{{ conflict.selected }}’ 대신 고정한 ‘{{ conflict.kept }}’ 기준을 유지해요.</p>{% endfor %}</details>{% endif %}
 <div class="image-workspace"><div>
-<h3>1. 보존할 상품 하나를 표시해주세요</h3><p class="help-text">상품 하나의 바깥 경계를 차례로 누릅니다. 안쪽은 보존하고 경계만 부드럽게 연결해요. 다른 음식·음료나 배경은 선택 영역에 넣지 마세요.</p>
+<h3>1. 보존할 상품 하나를 표시해주세요</h3>
+<label for="mask-mode">상품 선택 방법</label><select id="mask-mode"><option value="auto" {% if not segmentation_ready %}disabled{% endif %}>사각형으로 지정하고 자동 누끼</option><option value="manual" {% if not segmentation_ready %}selected{% endif %}>경계를 직접 표시</option></select>
+<p class="help-text">자동 선택에서는 상품 전체가 들어오는 사각형의 양 끝을 누른 뒤 ‘상품 자동 선택’을 누릅니다. 상자 중앙은 상품 위에, 모서리는 배경에 놓고 다른 상품은 상자 밖에 두세요. 수동 선택에서는 상품 경계를 차례로 누릅니다.</p>
 <img id="mask-source" src="/posts/{{ post.id }}/original" alt="보존할 원본 상품 사진" hidden>
 <canvas id="mask-editor" width="640" height="480" tabindex="0" aria-label="상품 보존 영역 편집" aria-describedby="mask-help"></canvas>
 <p id="mask-help" class="help-text">1. 클릭으로 점 추가 2. 키보드에서는 방향키로 이동하고 Enter로 추가합니다 3. Backspace로 가장 최근의 점을 지워요.</p>
 <div class="button-row"><button type="button" id="mask-undo" class="button secondary">마지막 점 지우기</button><button type="button" id="mask-reset" class="text-button">처음부터 표시</button></div>
+<button type="button" id="segment-product" class="button secondary" data-url="/posts/{{ post.id }}/product-mask" {% if not segmentation_ready %}disabled{% endif %}><span id="segment-spinner" class="spinner" hidden aria-hidden="true"></span><span>상품 자동 선택</span></button>
+<p class="help-text">자동 선택은 유료 이미지 생성 횟수를 사용하지 않아요.{% if not segmentation_ready %} 자동 선택 준비 전에는 수동으로 경계를 표시해주세요.{% endif %}</p>
 <p id="mask-message" role="status" class="muted">세 점 이상 표시해주세요</p>
+<div id="mask-cutout" hidden><p class="help-text">자동 선택 미리보기 · 상품 전체와 경계가 맞는지 확인해주세요. 잘못 선택되면 상자를 다시 지정하거나 수동 경계로 바꿀 수 있어요.</p><img id="mask-cutout-image" class="mask-cutout-image" alt="자동으로 분리한 상품 미리보기"></div>
 </div><form id="image-generation" action="/posts/{{ post.id }}/images" method="post" class="stack">
 <h3>2. 배경·분위기 편집 요청</h3>
 <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ post.revision }}"><input type="hidden" id="mask-points" name="mask_points" value="[]">
+<input type="hidden" id="mask-png" name="mask_png" value="">
 <label class="check"><input type="checkbox" name="confirmed" value="yes" required><span>스타일의 유지·변경 기준과 보존 영역을 확인했습니다. 이미지 호출 1회를 사용합니다.</span></label>
 <button class="button primary" type="submit" {% if not cfg.image_ready or image_busy or images|length >= image_limit or not current_style %}disabled{% endif %}>{{ '다른 후보 만들기' if images else '기존 스타일로 이미지 만들기' }}</button>
 <small id="image-attempts" class="muted">이미지 요청 {{ images|length }} / {{ image_limit }}회 · 실패도 포함해요. 문구 수정·후보 선택에는 새 이미지 호출이 없어요.</small>

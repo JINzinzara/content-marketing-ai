@@ -16,6 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=9,<10"]
+sam = ["onnxruntime>=1.20,<2", "numpy>=1.26,<3"]
 
 [tool.setuptools]
 packages = ["app"]

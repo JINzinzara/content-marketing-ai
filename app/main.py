@@ -17,6 +17,7 @@ from .config import Settings
 from .db import initialize
 from .instagram import Instagram, InstagramError
 from .image_ai import ImageAI
+from .segmentation import ProductSegmenter
 from .routes import page, router
 
 APP_DIR = Path(__file__).parent
@@ -82,6 +83,7 @@ def create_app(settings=None, http_client=None):
     app.state.instagram = Instagram(cfg, client)
     app.state.ai = TextAI(cfg, client)
     app.state.image_ai = ImageAI(cfg, client)
+    app.state.segmenter = ProductSegmenter()
     app.state.image_ai.recover()
     app.add_middleware(BodyLimitMiddleware)
     app.add_middleware(
