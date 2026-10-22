@@ -4,10 +4,39 @@ import io
 
 import pytest
 from fastapi import HTTPException
-from PIL import Image
+from PIL import Image, ImageChops, ImageDraw
 
 from app.db import connect, owned_post
-from app.rendering import normalize_photo, render
+from app.rendering import draw_text, normalize_photo, render, text_runs
+
+
+def test_emoji_is_rendered_as_a_glyph_instead_of_missing_font_box():
+    images = []
+    for title in ("☕", "\u0378"):
+        image = Image.new("RGB", (200, 120), "white")
+        draw_text(ImageDraw.Draw(image), title, (10, 10, 180, 100), size=58, fill="black")
+        images.append(image)
+    assert ImageChops.difference(*images).getbbox() is not None
+    assert text_runs("밤 라테 ☕🌰") == [("밤 라테 ", False), ("☕🌰", True)]
+    assert text_runs("1️⃣") == [("1️⃣", True)]
+
+
+def test_feed_preview_keeps_caption_emoji_and_matches_export(client, csrf, new_post, settings):
+    from app.credits import finalize
+
+    identifier = new_post()
+    fields = {"csrf": csrf, "revision": 1, "title": "몽블랑 라테 ☕🌰",
+              "caption": "오늘의 라테 ☕\n<script>안전한 본문</script>", "hashtags": "#밤라테🌰",
+              "layout": "frame", "aspect": "portrait"}
+    assert client.post(f"/posts/{identifier}/edit", data=fields).status_code == 200
+    html = client.get(f"/posts/{identifier}").text
+    assert 'aria-label="Instagram 피드 미리보기"' in html and 'id="feed-caption"' in html
+    assert "오늘의 라테 ☕" in html and "#밤라테🌰" in html
+    assert "&lt;script&gt;안전한 본문&lt;/script&gt;" in html
+    preview = client.get(f"/posts/{identifier}/image")
+    assert preview.status_code == 200
+    finalize(settings, "local-owner", identifier, expected_revision=2)
+    assert client.get(f"/posts/{identifier}/download").content == preview.content
 
 
 def test_invalid_upload_rejected(client, csrf):

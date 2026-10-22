@@ -9,12 +9,12 @@ from decimal import Decimal
 import httpx
 import pytest
 from fastapi import HTTPException
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 from app.costs import spent
 from app.credits import finalize
 from app.db import balance, connect, owned_post
-from app.image_ai import SIZE, mask_points, png_bytes, protected_canvas
+from app.image_ai import SIZE, composite, feather_mask, mask_points, png_bytes, protected_canvas
 from app.main import create_app
 
 POINTS = [[0.25, 0.2], [0.75, 0.2], [0.75, 0.8], [0.25, 0.8]]
@@ -57,6 +57,66 @@ def image_form(csrf, revision=1):
         "revision": revision,
         "mask_points": json.dumps(POINTS),
     }
+
+
+def test_feather_blends_only_the_inner_edge_and_preserves_product_core():
+    original = Image.new("RGB", SIZE, "red")
+    mask = Image.new("L", SIZE, 0)
+    ImageDraw.Draw(mask).rectangle((256, 256, 768, 768), fill=255)
+    alpha = feather_mask(mask)
+    assert alpha.getpixel((512, 512)) == 255
+    assert 0 < alpha.getpixel((256, 512)) < 255
+    assert alpha.getpixel((255, 512)) == 0
+    with Image.open(io.BytesIO(composite(original, mask, png_bytes(Image.new("RGB", SIZE, "blue"))))) as result:
+        assert result.getpixel((512, 512)) == (255, 0, 0)
+        assert result.getpixel((255, 512)) == (0, 0, 255)
+        edge = result.getpixel((256, 512))
+        assert 0 < edge[0] < 255 and 0 < edge[2] < 255
+
+
+def test_edit_sends_only_selected_product_without_background_or_reference_products(
+    app, client, csrf, new_post, settings
+):
+    identifier = new_post(preset_id="minimal")
+    enable_image(settings)
+    with connect(settings, write=True) as con:
+        snapshot = json.loads(owned_post(con, "local-owner", identifier)["style_snapshot"])
+        snapshot["reference_ids"] = ["local:past-menu"]
+        con.execute("INSERT INTO style_references VALUES ('past-menu','local-owner','not-read.jpg','휘낭시에 사진',0)")
+        con.execute("UPDATE posts SET style_snapshot=? WHERE id=?", (json.dumps(snapshot), identifier))
+
+    def handler(request):
+        payload = json.loads(request.content)
+        assert len(payload["images"]) == 1
+        assert "상품 하나만" in payload["prompt"] and "휘낭시에" in payload["prompt"]
+        with Image.open(io.BytesIO(base64.b64decode(payload["images"][0]["image_url"].split(",")[1]))) as image:
+            assert image.getpixel((512, 512)) == (32, 80, 120)
+            assert image.getpixel((128, 512)) == (255, 255, 255)
+        with Image.open(io.BytesIO(base64.b64decode(payload["mask"]["image_url"].split(",")[1]))) as mask:
+            assert 0 < mask.getpixel((256, 512))[3] < 255
+        return httpx.Response(200, json=image_body())
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as external:
+        app.state.image_ai.client = external
+        assert client.post(f"/posts/{identifier}/images", data=image_form(csrf)).status_code == 200
+    with connect(settings) as con:
+        assert con.execute("SELECT state FROM image_generations").fetchone()[0] == "completed"
+
+
+def test_json_submission_acknowledges_one_job_without_redirect(app, client, csrf, new_post, settings):
+    identifier = new_post(preset_id="minimal")
+    enable_image(settings)
+    calls = []
+    def handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(200, json=image_body())
+    with httpx.Client(transport=httpx.MockTransport(handler)) as external:
+        app.state.image_ai.client = external
+        response = client.post(f"/posts/{identifier}/images", data=image_form(csrf), headers={"Accept": "application/json"})
+    assert response.status_code == 202 and not response.history
+    job = client.get(f"/posts/{identifier}/image-progress").json()["job"]
+    assert response.json()["job_id"] == job["id"] and job["state"] == "completed"
+    assert calls == ["/v1/images/edits"]
 
 
 def test_actual_edit_contract_preserves_product_and_needs_explicit_selection(
@@ -104,8 +164,9 @@ def test_actual_edit_contract_preserves_product_and_needs_explicit_selection(
         canvas, protected = protected_canvas(original, POINTS)
         with Image.open(settings.data_dir / "generated" / job["filename"]) as candidate:
             diff = ImageChops.difference(canvas, candidate).convert("RGB")
+            interior = protected.filter(ImageFilter.MinFilter(17))
             for channel in diff.split():
-                assert ImageChops.multiply(channel, protected).getbbox() is None
+                assert ImageChops.multiply(channel, interior).getbbox() is None
             assert candidate.getpixel((0, 0)) == (255, 165, 0)
         assert (
             client.post(

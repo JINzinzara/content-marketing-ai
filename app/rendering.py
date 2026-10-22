@@ -2,6 +2,7 @@
 
 import io
 import os
+import re
 import tempfile
 import warnings
 from pathlib import Path
@@ -13,6 +14,11 @@ from .db import connect
 from .styles import post_style
 
 FONT = Path(__file__).parent / "assets/fonts/NotoSansKR.ttf"
+EMOJI_FONT = FONT.with_name("NotoEmoji.ttf")
+EMOJI_CHARACTER = re.compile(
+    r"[\U0001f000-\U0001faff\u2600-\u27bf\u200d\ufe0e\ufe0f\u20e3]"
+    r"|[0-9#*](?=\ufe0f?\u20e3)"
+)
 UPLOAD_BYTES = 8 * 1024 * 1024
 MAX_PIXELS = 20_000_000
 ASPECTS = {"portrait": (1080, 1350), "square": (1080, 1080)}
@@ -78,20 +84,37 @@ def atomic_write(path, content):
         Path(name).unlink(missing_ok=True)
 
 
-def font(size):
-    if not FONT.exists():
+def font(size, *, emoji=False):
+    path = EMOJI_FONT if emoji else FONT
+    if not path.exists():
         raise HTTPException(
-            503, "한글 글꼴 파일을 설치해주세요 (README의 글꼴 안내 참고)"
+            503, "한글·이모지 글꼴 파일을 설치해주세요 (README의 글꼴 안내 참고)"
         )
-    return ImageFont.truetype(str(FONT), size)
+    return ImageFont.truetype(str(path), size)
 
 
-def wrapped(draw, text, face, width):
+def text_runs(text):
+    """연속한 문자·이모지를 같은 글꼴로 측정·그리기 위한 구간으로 나눈다."""
+    runs = []
+    for index, character in enumerate(text):
+        emoji = bool(EMOJI_CHARACTER.match(text, index))
+        if runs and runs[-1][1] == emoji:
+            runs[-1] = (runs[-1][0] + character, emoji)
+        else:
+            runs.append((character, emoji))
+    return runs
+
+
+def text_width(draw, text, faces):
+    return sum(draw.textlength(run, font=faces[emoji]) for run, emoji in text_runs(text))
+
+
+def wrapped(draw, text, faces, width):
     lines = []
     for paragraph in text.splitlines() or [""]:
         line = ""
         for ch in paragraph:
-            if line and draw.textlength(line + ch, font=face) > width:
+            if line and text_width(draw, line + ch, faces) > width:
                 lines.append(line.rstrip())
                 line = "" if ch.isspace() else ch
             else:
@@ -103,18 +126,18 @@ def wrapped(draw, text, face, width):
 def draw_text(draw, text, box, *, size, fill, minimum=24):
     x, y, width, height = box
     for point in range(size, minimum - 1, -2):
-        face = font(point)
-        lines = wrapped(draw, text, face, width)
+        faces = (font(point), font(point, emoji=True))
+        lines = wrapped(draw, text, faces, width)
         line_height = point * 1.4
         if len(lines) * line_height <= height:
             for index, line in enumerate(lines):
-                draw.text(
-                    (x, y + index * line_height),
-                    line,
-                    font=face,
-                    fill=fill,
-                    anchor="lt",
-                )
+                runs = text_runs(line)
+                top = min((faces[emoji].getbbox(run, anchor="ls")[1] for run, emoji in runs), default=0)
+                cursor = x
+                for run, emoji in runs:
+                    draw.text((cursor, y + index * line_height - top), run,
+                              font=faces[emoji], fill=fill, anchor="ls")
+                    cursor += draw.textlength(run, font=faces[emoji])
             return
     raise HTTPException(422, "제목이나 가격 표기의 글자 수를 줄여주세요")
 

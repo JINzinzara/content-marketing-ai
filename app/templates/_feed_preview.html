@@ -1,0 +1,14 @@
+{% set handle = shop.ig_username or shop.name or '우리 가게' %}
+<article class="instagram-preview" aria-label="Instagram 피드 미리보기">
+  <header class="feed-header"><span class="feed-avatar" aria-hidden="true">{{ handle[:1] }}</span><strong>{{ handle }}</strong><span class="feed-more" aria-hidden="true">•••</span></header>
+  <img class="post-preview" src="/posts/{{ post.id }}/image?v={{ post.revision }}" alt="{{ post.product_name }} 게시 이미지">
+  <div class="feed-actions" aria-hidden="true">
+    <svg viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8Z"/></svg>
+    <svg viewBox="0 0 24 24"><path d="M21 11.5a9 9 0 0 1-13.4 7.9L3 21l1.6-4.6A9 9 0 1 1 21 11.5Z"/></svg>
+    <svg viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4 20-7ZM22 2 11 13"/></svg>
+    <svg class="feed-bookmark" viewBox="0 0 24 24"><path d="M5 3h14v19l-7-5-7 5V3Z"/></svg>
+  </div>
+  <div class="feed-body"><p class="feed-caption"><strong>{{ handle }}</strong> <span id="feed-caption">{{ post.caption }}</span></p><p id="feed-hashtags" class="feed-hashtags">{{ post.hashtags }}</p></div>
+</article>
+<p class="help-text">Instagram 피드 구성으로 확인하는 미리보기입니다. 실제 앱의 글꼴·줄바꿈은 기기에 따라 달라질 수 있어요.</p>
+<div class="preview-meta"><span>{{ '피드 세로형 · 1080 × 1350' if post.aspect == 'portrait' else '피드 정사각형 · 1080 × 1080' }}</span><span>{{ 'AI 문구' if post.source == 'ai' else '직접 입력한 문구' }}</span></div>

@@ -8,7 +8,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.datastructures import UploadFile
 
@@ -450,6 +450,7 @@ def post_view(request: Request, post_id: str, who: Owner):
         images=images,
         presets=styles.PRESETS,
         image_limit=request.app.state.settings.image_attempts_per_post,
+        image_progress=request.app.state.image_ai.progress(who, post_id),
         current_style=styles.post_style(post),
         style_fields=styles.FIELDS,
         image_busy=any(
@@ -495,7 +496,14 @@ def generate_image(
         who, post_id, revision, str(form.get("mask_points", ""))
     )
     tasks.add_task(request.app.state.image_ai.run, job)
+    if "application/json" in request.headers.get("accept", ""):
+        return JSONResponse({"job_id": job}, status_code=202)
     return back("/posts/" + post_id)
+
+
+@router.get("/posts/{post_id}/image-progress")
+def image_progress(request: Request, post_id: str, who: Owner):
+    return {"job": request.app.state.image_ai.progress(who, post_id)}
 
 
 @router.get("/posts/{post_id}/original")
@@ -634,7 +642,7 @@ def preview(request: Request, post_id: str, who: Owner):
     with connect(cfg) as con:
         post = owned_post(con, who, post_id)
     return Response(
-        render(cfg, post, account(cfg, who)["name"], preview=True),
+        render(cfg, post, account(cfg, who)["name"]),
         media_type="image/jpeg",
         headers={"Cache-Control": "no-store"},
     )
