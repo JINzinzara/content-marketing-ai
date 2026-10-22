@@ -4,4 +4,4 @@
 <label class="style-option"><input type="radio" name="preset_id" value="{{ key }}" {% if (current_style.preset_id if current_style else 'keep') == key %}checked{% endif %} required>
 <span class="style-swatch swatch-{{ key }}" aria-hidden="true"><span></span></span><strong>{{ option.label }}</strong><small>{{ option.description }}</small></label>
 {% endfor %}
-</fieldset><small class="muted">미리 준비된 예시입니다. 실제 상품 결과가 아니며 선택만으로 AI를 호출하지 않아요</small>
+</fieldset><small class="muted">스타일 예시 · 무료 선택</small>

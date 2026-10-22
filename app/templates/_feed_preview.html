@@ -10,5 +10,5 @@
   </div>
   <div class="feed-body"><p class="feed-caption"><strong>{{ handle }}</strong> <span id="feed-caption">{{ post.caption }}</span></p><p id="feed-hashtags" class="feed-hashtags">{{ post.hashtags }}</p></div>
 </article>
-<p class="help-text">Instagram 피드 구성으로 확인하는 미리보기입니다. 실제 앱의 글꼴·줄바꿈은 기기에 따라 달라질 수 있어요.</p>
-<div class="preview-meta"><span>{{ '피드 세로형 · 1080 × 1350' if post.aspect == 'portrait' else '피드 정사각형 · 1080 × 1080' }}</span><span>{{ 'AI 문구' if post.source == 'ai' else '직접 입력한 문구' }}</span></div>
+<p class="help-text">기기별 표시 차이 있음</p>
+<div class="preview-meta"><span>{{ '1080 × 1350' if post.aspect == 'portrait' else '1080 × 1080' }}</span><span>{{ 'AI 문구' if post.source == 'ai' else '직접 입력한 문구' }}</span></div>

@@ -1,21 +1,21 @@
 {% extends 'base.html' %}{% block content %}
 <!-- 가게 기준과 미확정 제안을 구분하고 새 버전으로 저장한다. -->
-<div class="page-heading"><p class="eyebrow">BRAND PROFILE</p><h1>사용자만의 기준</h1><p>대표 게시물에서 찾은 기준을 확인하면 다음 게시물에도 같은 분위기를 적용할 수 있어요</p></div>
+<div class="page-heading"><h1>사용자만의 기준</h1><p>우리 가게 분위기 설정</p></div>
 <div class="two-columns">
 <section class="panel">
 <h2>가게 정보와 스타일 {% if profile %}<span class="badge">확정 버전 {{ profile.version }}</span>{% endif %}</h2>
-{% if proposal %}<div class="pending-box">아래에는 아직 확정하지 않은 AI 제안이 들어 있어요. 수정·확인한 뒤 저장해주세요</div>{% endif %}
+{% if proposal %}<div class="pending-box">AI 제안 확인 후 저장</div>{% endif %}
 {% set content = proposal.content if proposal else (profile.content if profile else {}) %}
 <form action="/shop" method="post" class="stack">
 <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="profile_version" value="{{ profile.version if profile else 0 }}">
 {% if proposal %}<input type="hidden" name="proposal_version" value="{{ proposal.version }}">{% endif %}
 <label for="name">가게 이름 *</label><input id="name" name="name" value="{{ shop.name }}" maxlength="40" required>
 <label for="description">가게 소개</label><textarea id="description" name="description" rows="3" maxlength="1000">{{ shop.description }}</textarea>
-<details><summary>기존 게시물에 덧붙일 설명 · 선택</summary><label for="reference_notes">추가로 참고할 문구</label><textarea id="reference_notes" name="reference_notes" rows="3" maxlength="5000">{{ shop.reference_notes }}</textarea></details>
+<details><summary>추가 설명 · 선택</summary><label for="reference_notes">추가로 참고할 문구</label><textarea id="reference_notes" name="reference_notes" rows="3" maxlength="5000">{{ shop.reference_notes }}</textarea></details>
 <label for="style">말투와 분위기 요약</label><textarea id="style" name="style" rows="3" maxlength="2400">{{ content.get('summary', shop.style) }}</textarea>
 {% for field, label in style_fields.items() %}
-<label for="style-{{ field }}">{{ label }}</label><input id="style-{{ field }}" name="style_{{ field }}" maxlength="250" value="{{ content.get('attributes', {}).get(field, '') }}" placeholder="확인한 특징을 적거나 모르면 비워두세요">
-<label class="check"><input type="checkbox" name="locked_fields" value="{{ field }}" {% if field in content.get('locked_fields', []) %}checked{% endif %}><span>스타일을 바꿔도 해당 기준을 유지</span></label>
+<label for="style-{{ field }}">{{ label }}</label><input id="style-{{ field }}" name="style_{{ field }}" maxlength="250" value="{{ content.get('attributes', {}).get(field, '') }}" placeholder="확인한 특징만 입력">
+<label class="check"><input type="checkbox" name="locked_fields" value="{{ field }}" {% if field in content.get('locked_fields', []) %}checked{% endif %}><span>이 기준 고정</span></label>
 {% endfor %}
 <label for="color">문구·브랜드 포인트 색상</label><input type="color" id="color" name="color" value="{{ shop.color }}">
 {% if content.get('evidence') %}<details><summary>제안의 근거와 확인할 점</summary><ul>{% for item in content.evidence %}<li>{{ item }}</li>{% endfor %}{% for item in content.get('uncertainties', []) %}<li>미확인: {{ item }}</li>{% endfor %}</ul></details>{% endif %}
@@ -23,19 +23,21 @@
 </form>
 </section>
 <div class="stack roomy"><section class="panel subtle">
-<h2>Instagram 기존 게시물 분석</h2><p>연결한 계정의 게시물에서 가게가 유지해 온 색감·구도·말투를 확인해요.</p>
+<h2>기존 게시물 분석</h2><p>색감·구도·말투 분석</p>
 {% if shop.connected %}<form action="/instagram/sync" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="button secondary" type="submit">기존 게시물 가져오기</button></form>{% else %}<a class="button secondary" href="/connections">Instagram 연결 준비</a>{% endif %}
-<form action="/shop/analyze" method="post" class="stack separate-form"><input type="hidden" name="csrf" value="{{ csrf }}">
-{% for item in references %}<label class="reference-choice"><input type="checkbox" name="reference_id" value="{{ item.id }}">
+<div class="stack separate-form">
+{% for item in references %}<div class="reference-item"><label class="reference-choice"><input type="checkbox" form="style-analysis" name="reference_id" value="{{ item.id }}">
 {% if item.preview.startswith('/') %}<img src="{{ item.preview }}" alt="직접 제공한 참고 사진">{% endif %}
 <span><small>{{ item.kind }}</small>{{ item.caption[:180] or '본문 없는 사진' }}</span></label>
-{% else %}<p class="muted">이미지이 없으면 아래에서 직접 올리거나 저장한 가게 소개로 시작할 수 있어요</p>{% endfor %}
-<small class="muted">현재는 한 번에 최대 3개를 분석해요. 전체 이력 자동 분석은 아직 지원하지 않아요.</small>
-<button class="button secondary" type="submit" {% if not cfg.ai_ready %}disabled{% endif %}>선택한 자료로 스타일 제안 받기</button>
+<form action="/shop/references/{{ item.id }}/delete" method="post" data-confirm="참고 자료를 삭제할까요?"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="confirmed" value="yes"><button class="text-button danger" type="submit">삭제</button></form></div>
+{% else %}<p class="muted">참고 사진을 추가하세요</p>{% endfor %}
+<small class="muted">인스타 원본은 유지돼요</small></div>
+<form id="style-analysis" action="/shop/analyze" method="post" class="stack separate-form"><input type="hidden" name="csrf" value="{{ csrf }}"><small class="muted">한 번에 최대 3개 분석</small>
+<button class="button secondary" type="submit" {% if not cfg.ai_ready %}disabled{% endif %}>스타일 분석</button>
 </form>
 {% if next_cursor %}<form action="/instagram/sync" method="post" class="separate-form"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="after" value="{{ next_cursor }}"><button class="button secondary" type="submit">다음 게시물 가져오기</button></form>{% endif %}
 </section><details class="panel">
-<summary>연동 전·자료 보완을 위한 직접 추가 · 선택</summary><p>Instagram에서 가져온 게시물은 다시 올릴 필요 없어요.</p>
+<summary>참고 자료 추가 · 선택</summary><p>중복 업로드 불필요</p>
 <form action="/shop/references" method="post" enctype="multipart/form-data" class="stack">
 <input type="hidden" name="csrf" value="{{ csrf }}"><label for="reference-photo">참고 이미지</label><input id="reference-photo" type="file" name="photo" accept="image/jpeg,image/png,image/webp" required>
 <label for="reference-caption">함께 게시했던 문구</label><textarea id="reference-caption" name="caption" maxlength="2200" rows="3"></textarea>

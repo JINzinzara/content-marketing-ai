@@ -20,7 +20,7 @@ from .db import account, balance, connect, owned_post
 from .costs import spent
 from .instagram import caption_text
 from .rendering import UPLOAD_BYTES, atomic_write, normalize_photo, render
-from .image_ai import mask_points, protected_canvas
+from .image_ai import BUSY_PUBLISH, mask_points, protected_canvas
 from .segmentation import encode_mask
 
 router = APIRouter()
@@ -132,7 +132,7 @@ def studio(request: Request, who: Owner):
         posts = [
             dict(row)
             for row in con.execute(
-                "SELECT * FROM posts WHERE owner_id=? ORDER BY created_at DESC, rowid DESC",
+                "SELECT * FROM posts WHERE owner_id=? AND deleted_at IS NULL ORDER BY created_at DESC, rowid DESC",
                 (who,),
             )
         ]
@@ -239,7 +239,7 @@ def save_shop(request: Request, who: Owner, form: Form):
             "UPDATE accounts SET name=?, description=?, style=?, reference_notes=?, color=? WHERE id=?",
             (*values.values(), who),
         )
-    request.session["notice"] = "스타일을 저장헀습니다. 다음 제작부터 반영됩니다"
+    request.session["notice"] = "스타일 저장 완료"
     return back("/shop")
 
 
@@ -291,7 +291,7 @@ def analyze_shop(request: Request, who: Owner, form: Form):
             "UPDATE accounts SET style_proposal=? WHERE id=?", (proposal[:5000], who)
         )
     request.session["notice"] = (
-        "AI가 제안한 스타일입니다. 내용 확인 후, 스타일에 반영해 저장해주세요"
+        "스타일 제안 확인 필요"
     )
     return back("/shop")
 
@@ -310,7 +310,7 @@ def add_reference(request: Request, who: Owner, form: Form):
     try:
         with connect(cfg, write=True) as con:
             con.execute(
-                "INSERT INTO style_References VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO style_references(id, owner_id, filename, caption, created_at) VALUES (?, ?, ?, ?, ?)",
                 (identifier, who, filename, caption, int(time.time())),
             )
     except BaseException:
@@ -324,7 +324,7 @@ def reference_photo(request: Request, reference_id: str, who: Owner):
     cfg = request.app.state.settings
     with connect(cfg) as con:
         row = con.execute(
-            "SELECT filename FROM style_references WHERE id=? and owner_id=?",
+            "SELECT filename FROM style_references WHERE id=? AND owner_id=? AND deleted_at IS NULL",
             (reference_id, who),
         ).fetchone()
     if not row:
@@ -332,6 +332,24 @@ def reference_photo(request: Request, reference_id: str, who: Owner):
     return FileResponse(
         cfg.data_dir / "references" / row["filename"], media_type="image/jpeg"
     )
+
+
+@router.post("/shop/references/{reference_id}/delete")
+def delete_reference(request: Request, reference_id: str, who: Owner, form: Form):
+    """본인의 참고 자료를 앱에서 삭제한다. 기존 스타일·인스타 원본은 유지한다."""
+    kind, _, identifier = reference_id.partition(":")
+    table, key = {"local": ("style_references", "id"), "ig": ("history", "media_id")}.get(kind, (None, None))
+    if not table or form.get("confirmed") != "yes":
+        raise HTTPException(422, "삭제 대상을 확인하세요")
+    with connect(request.app.state.settings, write=True) as con:
+        changed = con.execute(
+            f"UPDATE {table} SET deleted_at=? WHERE {key}=? AND owner_id=? AND deleted_at IS NULL",
+            (int(time.time()), identifier, who),
+        ).rowcount
+        if not changed:
+            raise HTTPException(404, "자료를 찾을 수 없어요")
+    request.session["notice"] = "참고 자료 삭제 완료"
+    return back("/shop")
 
 
 @router.get("/posts/new")
@@ -413,9 +431,9 @@ def create_post(request: Request, who: Owner, form: Form):
                         post_id,
                     ),
                 )
-        except HTTPException as exc:
+        except HTTPException:
             request.session["notice"] = (
-                str(exc.detail) + "입력한 상품 정보를 저장했습니다"
+                "초안 저장·AI 연결 확인"
             )
     return back("/posts/" + post_id)
 
@@ -441,6 +459,7 @@ def post_view(request: Request, post_id: str, who: Owner):
                 (who, post_id),
             )
         ]
+        image_block = request.app.state.image_ai.block_reason(con, post)
     return page(
         request,
         "post.html",
@@ -452,6 +471,7 @@ def post_view(request: Request, post_id: str, who: Owner):
         images=images,
         presets=styles.PRESETS,
         image_limit=request.app.state.settings.image_attempts_per_post,
+        image_block=image_block[1] if image_block else "",
         image_progress=request.app.state.image_ai.progress(who, post_id),
         segmentation_ready=request.app.state.segmenter.ready,
         current_style=styles.post_style(post),
@@ -460,6 +480,21 @@ def post_view(request: Request, post_id: str, who: Owner):
             row["state"] in {"queued", "running", "unknown"} for row in images
         ),
     )
+
+
+@router.post("/posts/{post_id}/delete")
+def delete_post(request: Request, post_id: str, who: Owner, form: Form):
+    """본인의 콘텐츠를 삭제하되 제작권·비용·발행 기록은 보존한다."""
+    revision = confirmed(form)
+    with connect(request.app.state.settings, write=True) as con:
+        post = owned_post(con, who, post_id)
+        active = con.execute("SELECT 1 FROM image_generations WHERE post_id=? AND state IN ('queued','running','unknown')", (post_id,)).fetchone()
+        if post["revision"] != revision or post["publish_state"] in BUSY_PUBLISH or active:
+            raise HTTPException(409, "처리 상태를 확인하세요")
+        con.execute("UPDATE posts SET deleted_at=? WHERE id=?", (int(time.time()), post_id))
+        con.execute("DELETE FROM media_links WHERE filename GLOB ?", (post_id + "-*.jpg",))
+    request.session["notice"] = "콘텐츠 삭제 완료"
+    return back("/studio")
 
 
 @router.post("/posts/{post_id}/style")
@@ -485,7 +520,7 @@ def choose_style(request: Request, post_id: str, who: Owner, form: Form):
                 (resolved, post_id),
             )
     request.session["notice"] = (
-        "게시물 스타일을 저장했습니다. 기본 스타일은 유지되며 새로운 스타일을 확인한 뒤 이미지를 생성해주세요"
+        "게시물 스타일 저장 완료"
     )
     return back("/posts/" + post_id)
 
@@ -624,9 +659,9 @@ def edit_post(request: Request, post_id: str, who: Owner, form: Form):
             ),
         )
     request.session["notice"] = (
-        "수정 내용을 저장했습니다. 완성본에 적용하시려면 다시 확정해주세요"
+        "수정 저장·재확정 필요"
         if post["finalized_at"]
-        else "수정 내용을 저장했습니다"
+        else "수정 저장 완료"
     )
     return back("/posts/" + post_id)
 
@@ -667,6 +702,8 @@ def preview(request: Request, post_id: str, who: Owner):
     cfg = request.app.state.settings
     with connect(cfg) as con:
         post = owned_post(con, who, post_id)
+    if post["finished_file"] and post["rendered_revision"] == post["revision"]:
+        return FileResponse(cfg.data_dir / "finished" / post["finished_file"], media_type="image/jpeg", headers={"Cache-Control": "no-store"})
     return Response(
         render(cfg, post, account(cfg, who)["name"]),
         media_type="image/jpeg",
@@ -679,7 +716,7 @@ def finalize_post(request: Request, post_id: str, who: Owner, form: Form):
     revision = confirmed(form)
     finalize(request.app.state.settings, who, post_id, expected_revision=revision)
     request.session["notice"] = (
-        "완성본 제작이 완료되었습니다. 이미지 다운로드와 같은 결과물의 게시에는 제작권이 차감되지 않습니다"
+        "완성본 확정 완료"
     )
     return back("/posts/" + post_id)
 
@@ -746,7 +783,7 @@ def instagram_callback(
     request.session.clear()
     request.session["owner_id"] = identifier
     request.session["notice"] = (
-        "Instagram 게정을 연결했습니다. 기존 게시물을 가져와 스타일을 확인하세요"
+        "Instagram 연결 완료"
     )
     return back("/shop")
 
@@ -759,7 +796,7 @@ def sync_instagram(request: Request, who: Owner, form: Form):
     request.session["history_next"] = request.app.state.instagram.sync_history(
         who, after
     )
-    request.session["notice"] = "계정의 게시물을 가져왔습니다"
+    request.session["notice"] = "게시물 가져오기 완료"
     return back("/shop")
 
 
@@ -771,7 +808,7 @@ def disconnect_instagram(request: Request, who: Owner, form: Form):
             (who,),
         )
     request.session["notice"] = (
-        "Instagram 연결이 해제되었습니다. 앱 권한은 계정 설정에서 관리할 수 있습니다"
+        "연결 해제 완료"
     )
     return back("/connections")
 

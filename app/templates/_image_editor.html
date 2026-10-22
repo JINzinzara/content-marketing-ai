@@ -1,47 +1,48 @@
 <!-- 조합 스타일과 보존 영역을 확인하고 승인한 이미지 후보만 사용한다. -->
 <section class="panel stack">
-<h2>스타일에 맞는 이미지 만들기</h2>
+<h2>이미지 후보 만들기</h2>
 <form action="/posts/{{ post.id }}/style" method="post" class="stack">
 <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ post.revision }}">
 {% include '_style_choices.html' %}
-<label class="check"><input type="checkbox" name="confirmed" value="yes" required><span>기존 스타일과 이번 선택을 조합합니다. 선택한 이미지가 있으면 원본으로 돌아갑니다.</span></label>
-<button class="button secondary" type="submit">이번 게시물에 스타일 적용</button></form>
-{% if current_style %}<details open><summary>적용 기준 · {{ current_style.preset_label }} · 기존 스타일 {{ current_style.profile_version }}</summary>
+<label class="check"><input type="checkbox" name="confirmed" value="yes" required><span>스타일 변경에 동의</span></label>
+<small class="muted">변경 시 원본으로 전환</small><button class="button secondary" type="submit">스타일 적용</button></form>
+{% if current_style %}<details><summary>적용 스타일</summary>
 <dl class="style-details">{% for field, label in style_fields.items() %}<div><dt>{{ label }}</dt><dd>{{ current_style.attributes.get(field, '') }} <small>{{ current_style.sources.get(field, '') }}</small></dd></div>{% endfor %}</dl>
-{% for conflict in current_style.conflicts %}<p class="conflict-note">{{ conflict.field }}: 선택의 ‘{{ conflict.selected }}’ 대신 고정한 ‘{{ conflict.kept }}’ 기준을 유지해요.</p>{% endfor %}</details>{% endif %}
+{% for conflict in current_style.conflicts %}<p class="conflict-note">{{ conflict.field }} 고정 기준 유지</p>{% endfor %}</details>{% endif %}
 <div class="image-workspace"><div>
-<h3>1. 보존할 상품 하나를 표시해주세요</h3>
-<label for="mask-mode">상품 선택 방법</label><select id="mask-mode"><option value="auto" {% if not segmentation_ready %}disabled{% endif %}>사각형으로 지정하고 자동 누끼</option><option value="manual" {% if not segmentation_ready %}selected{% endif %}>경계를 직접 표시</option></select>
-<p class="help-text">자동 선택에서는 상품 전체가 들어오는 사각형의 양 끝을 누른 뒤 ‘상품 자동 선택’을 누릅니다. 상자 중앙은 상품 위에, 모서리는 배경에 놓고 다른 상품은 상자 밖에 두세요. 수동 선택에서는 상품 경계를 차례로 누릅니다.</p>
+<h3>1. 상품 선택</h3>
+<label for="mask-mode">상품 선택 방법</label><select id="mask-mode"><option value="auto" {% if not segmentation_ready %}disabled{% endif %}>사각형으로 자동 선택</option><option value="manual" {% if not segmentation_ready %}selected{% endif %}>경계 직접 표시</option></select>
+<p class="help-text">상자로 상품을 감싸세요</p>
 <img id="mask-source" src="/posts/{{ post.id }}/original" alt="보존할 원본 상품 사진" hidden>
 <canvas id="mask-editor" width="640" height="480" tabindex="0" aria-label="상품 보존 영역 편집" aria-describedby="mask-help"></canvas>
-<p id="mask-help" class="help-text">1. 클릭으로 점 추가 2. 키보드에서는 방향키로 이동하고 Enter로 추가합니다 3. Backspace로 가장 최근의 점을 지워요.</p>
+<p id="mask-help" class="help-text">방향키 이동·Enter 선택</p>
 <div class="button-row"><button type="button" id="mask-undo" class="button secondary">마지막 점 지우기</button><button type="button" id="mask-reset" class="text-button">처음부터 표시</button></div>
 <button type="button" id="segment-product" class="button secondary" data-url="/posts/{{ post.id }}/product-mask" {% if not segmentation_ready %}disabled{% endif %}><span id="segment-spinner" class="spinner" hidden aria-hidden="true"></span><span>상품 자동 선택</span></button>
-<p class="help-text">자동 선택은 유료 이미지 생성 횟수를 사용하지 않아요.{% if not segmentation_ready %} 자동 선택 준비 전에는 수동으로 경계를 표시해주세요.{% endif %}</p>
+<p class="help-text">{{ '상품 선택은 무료' if segmentation_ready else '수동 선택을 이용하세요' }}</p>
 <p id="mask-message" role="status" class="muted">세 점 이상 표시해주세요</p>
-<div id="mask-cutout" hidden><p class="help-text">자동 선택 미리보기 · 상품 전체와 경계가 맞는지 확인해주세요. 잘못 선택되면 상자를 다시 지정하거나 수동 경계로 바꿀 수 있어요.</p><img id="mask-cutout-image" class="mask-cutout-image" alt="자동으로 분리한 상품 미리보기"></div>
-</div><form id="image-generation" action="/posts/{{ post.id }}/images" method="post" class="stack">
-<h3>2. 배경·분위기 편집 요청</h3>
+<div id="mask-cutout" hidden><p class="help-text">상품 경계를 확인하세요</p><img id="mask-cutout-image" class="mask-cutout-image" alt="상품 분리 결과"></div>
+</div><form id="image-generation" action="/posts/{{ post.id }}/images" method="post" class="stack" novalidate>
+<h3>2. 배경 생성</h3>
 <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ post.revision }}"><input type="hidden" id="mask-points" name="mask_points" value="[]">
 <input type="hidden" id="mask-png" name="mask_png" value="">
-<label class="check"><input type="checkbox" name="confirmed" value="yes" required><span>스타일의 유지·변경 기준과 보존 영역을 확인했습니다. 이미지 호출 1회를 사용합니다.</span></label>
-<button class="button primary" type="submit" {% if not cfg.image_ready or image_busy or images|length >= image_limit or not current_style %}disabled{% endif %}>{{ '다른 후보 만들기' if images else '기존 스타일로 이미지 만들기' }}</button>
-<small id="image-attempts" class="muted">이미지 요청 {{ images|length }} / {{ image_limit }}회 · 실패도 포함해요. 문구 수정·후보 선택에는 새 이미지 호출이 없어요.</small>
-{% if not cfg.image_ready %}<p class="help-text">이미지 연결 준비 중입니다. 원본으로 제작을 이어갈 수 있어요.</p>{% endif %}
+<label class="check"><input type="checkbox" name="confirmed" value="yes" required><span>상품 확인·생성 1회 동의</span></label>
+<button class="button primary" type="submit" {% if image_block %}disabled{% endif %}>{{ '다른 후보 만들기' if images else '이미지 후보 생성' }}</button>
+<small id="image-attempts" class="muted">생성 {{ images|length }}/{{ image_limit }}회 · 실패 포함</small>
+<p id="image-block" class="help-text" role="status">{{ image_block }}</p>
 <div id="image-progress" class="generation-progress" data-url="/posts/{{ post.id }}/image-progress" data-state="{{ image_progress.state if image_progress else '' }}" {% if not image_progress or image_progress.state not in ['queued','running'] %}hidden{% endif %}>
-<span class="spinner" aria-hidden="true"></span><div><p id="image-progress-label" role="status">{{ '이미지를 만들고 있어요' if image_progress and image_progress.state == 'running' else '이미지 생성을 준비하고 있어요' }}</p><p id="image-progress-time" class="muted" aria-live="off">{{ image_progress.elapsed_seconds if image_progress else 0 }}초 경과</p><p id="image-progress-estimate" class="help-text">{% if image_progress and image_progress.expected_seconds %}같은 설정의 이전 {{ image_progress.sample_count }}건 기준 약 {{ image_progress.expected_seconds }}초 · 참고용 예상 시간{% else %}완료 이력이 쌓이면 예상 시간을 안내해요. 생성 시간은 요청마다 달라요.{% endif %}</p></div>
+<span class="spinner" aria-hidden="true"></span><div><p id="image-progress-label" role="status">{{ '이미지 생성 중' if image_progress and image_progress.state == 'running' else '이미지 생성 준비' }}</p><p id="image-progress-time" class="muted" aria-live="off">{{ image_progress.elapsed_seconds if image_progress else 0 }}초 경과</p><p id="image-progress-estimate" class="help-text">{% if image_progress and image_progress.expected_seconds %}약 {{ image_progress.expected_seconds }}초 · 참고용{% else %}예상 시간 집계 중{% endif %}</p></div>
 </div>
-{% if image_busy and images and images[0].state == 'unknown' %}<p role="status">이전 요청 결과를 확인하지 못해 새 요청을 막았습니다. 비용 확인 후 진행해주세요. 원본과 기존 후보는 계속 사용할 수 있어요.</p>{% endif %}
+<button id="image-recheck" type="button" class="text-button" hidden>요청 상태 확인</button>
+{% if image_busy and images and images[0].state == 'unknown' %}<p role="status">이전 요청 확인 필요</p>{% endif %}
 </form></div>
-<h3>3. 원본과 비교하고 사용할 사진 선택</h3>
+<h3>3. 사용할 사진 선택</h3>
 <div id="image-candidates" class="candidate-grid"><div class="candidate"><img src="/posts/{{ post.id }}/original" alt="원본 상품 사진"><p>{{ '현재 선택 · 원본' if not post.selected_image_id else '원본 사진' }}</p>
 <form action="/posts/{{ post.id }}/images/select" method="post" class="stack"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ post.revision }}"><input type="hidden" name="image_id" value=""><label class="check"><input type="checkbox" name="confirmed" value="yes" required><span>원본 사진을 사용합니다.</span></label><button class="button secondary" type="submit">원본 선택</button></form></div>
 {% for image in images %}<div class="candidate">
 {% if image.state == 'completed' %}<img src="/posts/{{ post.id }}/images/{{ image.id }}" alt="확인할 생성 이미지 후보">{% endif %}
-<p>{{ '현재 선택' if post.selected_image_id == image.id else '생성 후보' }} · {{ {'queued':'대기','running':'처리 중','completed':'검토 가능','failed':'사용 불가','unknown':'결과 확인 필요'}[image.state] }}</p><p class="help-text">{{ image.message }}</p>
+<p>{{ '현재 선택' if post.selected_image_id == image.id else '생성 후보' }} · {{ {'queued':'대기','running':'처리 중','completed':'검토 가능','failed':'사용 불가','unknown':'결과 확인 필요'}[image.state] }}</p>{% if image.state != 'completed' %}<p class="help-text">{{ image.message if image.message|length <= 15 else '생성 상태 확인 필요' }}</p>{% endif %}
 {% if image.state == 'completed' and image.style_snapshot == post.style_snapshot %}<form action="/posts/{{ post.id }}/images/select" method="post" class="stack"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ post.revision }}"><input type="hidden" name="image_id" value="{{ image.id }}">
-<label class="check"><input type="checkbox" name="confirmed" value="yes" required><span>상품 하나만 있고 추가 음식·음료가 없는지, 상품의 형태·색·경계와 기존 스타일을 확인했습니다.</span></label><button class="button secondary" type="submit">이 후보 사용</button></form>
-{% elif image.state == 'completed' %}<small>현재 스타일과 다른 후보여서 선택할 수 없어요.</small>{% endif %}
+<label class="check"><input type="checkbox" name="confirmed" value="yes" required><span>상품·개수·경계 확인 완료</span></label><button class="button secondary" type="submit">이 후보 사용</button></form>
+{% elif image.state == 'completed' %}<small>다른 스타일의 후보</small>{% endif %}
 </div>{% endfor %}</div>
 </section>

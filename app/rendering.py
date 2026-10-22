@@ -160,14 +160,13 @@ def render(settings, post, shop_name, *, preview=False):
         photo = settings.data_dir / "generated" / candidate["filename"]
     brand = post_style(post).get("brand", {})
     logo = brand.get("logo_file", "")
+    price_space = 170 if post.get("show_price") and post["price"] else 0
     with Image.open(photo) as src:
         if post["layout"] == "frame":
-            photo_box = (48, 210, width - 96, height - 450)
-            title_box = (56, 90, width - 112, 115)
+            photo_box = (48, 96, width - 96, height - 144 - price_space)
             price_box = (56, height - 145, width - 112, 85)
         else:
-            photo_box = (0, 0, width, int(height * 0.67))
-            title_box = (56, int(height * 0.70), width - 112, int(height * 0.17))
+            photo_box = (0, 0, width, height - price_space)
             price_box = (56, int(height * 0.89), width - 112, int(height * 0.08))
         x, y, w, h = photo_box
         scaled = ImageOps.contain(src, (w, h), Image.Resampling.LANCZOS)
@@ -185,7 +184,6 @@ def render(settings, post, shop_name, *, preview=False):
         with Image.open(settings.data_dir / "references" / logo) as mark:
             mark = ImageOps.contain(mark.convert("RGB"), (104, 60))
             image.paste(mark, (width - 136, 24))
-    draw_text(draw, post["title"], title_box, size=58, fill=accent)
     if post.get("show_price") and post["price"]:
         draw_text(draw, post["price"], price_box, size=42, fill=accent)
     if preview:

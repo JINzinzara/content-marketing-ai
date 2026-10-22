@@ -21,6 +21,14 @@ def test_emoji_is_rendered_as_a_glyph_instead_of_missing_font_box():
     assert text_runs("1️⃣") == [("1️⃣", True)]
 
 
+@pytest.mark.parametrize("layout", ["frame", "split"])
+def test_management_title_is_not_drawn_on_preview_or_export(new_post, settings, layout):
+    identifier = new_post(layout=layout)
+    with connect(settings) as con:
+        post = owned_post(con, "local-owner", identifier)
+    assert render(settings, post, "가게") == render(settings, {**post, "title": "이 제목은 사진에 없어야 해요 🌰"}, "가게")
+
+
 def test_feed_preview_keeps_caption_emoji_and_matches_export(client, csrf, new_post, settings):
     from app.credits import finalize
 
