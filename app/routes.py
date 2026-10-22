@@ -496,7 +496,11 @@ def generate_image(
 ):
     revision = confirmed(form)
     job = request.app.state.image_ai.queue(
-        who, post_id, revision, str(form.get("mask_points", "")), str(form.get("mask_png", ""))
+        who,
+        post_id,
+        revision,
+        str(form.get("mask_points", "")),
+        str(form.get("mask_png", "")),
     )
     tasks.add_task(request.app.state.image_ai.run, job)
     if "application/json" in request.headers.get("accept", ""):
@@ -506,12 +510,14 @@ def generate_image(
 
 @router.post("/posts/{post_id}/product-mask")
 def product_mask(request: Request, post_id: str, who: Owner, form: Form):
-    """소유자 사진의 상품 마스크를 로컬에서 계산한다. 유료 API·제작권 사용 없음."""
+    """소유자 사진의 상품 마스크를 로컬에서 계산한다"""
     cfg = request.app.state.settings
     with connect(cfg) as con:
         post = owned_post(con, who, post_id)
     if str(post["revision"]) != str(form.get("revision", "")):
-        raise HTTPException(409, "게시물이 변경되었습니다. 새로고침 후 다시 선택해주세요")
+        raise HTTPException(
+            409, "게시물이 변경되었습니다. 새로고침 후 다시 선택해주세요"
+        )
     points = mask_points(str(form.get("mask_points", "")))
     raw = (cfg.data_dir / "originals" / post["original_file"]).read_bytes()
     canvas, region = protected_canvas(raw, points)
