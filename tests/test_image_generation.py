@@ -120,14 +120,56 @@ def test_json_submission_acknowledges_one_automatic_job_without_redirect(app, cl
     assert calls == ["/v1/images/edits"]
 
 
-def test_editor_no_longer_requires_region_or_loads_sam(app, client, new_post, csrf, settings):
+def test_editor_defaults_to_automatic_with_optional_polygon_without_sam(app, client, new_post, csrf, settings):
     identifier = new_post()
     html = client.get(f"/posts/{identifier}").text
-    assert 'id="mask-editor"' not in html and 'name="mask_points"' not in html
+    assert 'id="region-editor" hidden' in html and 'id="mask-editor"' in html
+    assert '<option value="automatic">자동 이미지 편집</option>' in html
     assert 'id="mask-tool"' not in html and not hasattr(app.state, "segmenter")
     assert client.post(f"/posts/{identifier}/product-mask", data={"csrf": csrf}).status_code == 404
     with connect(settings) as con:
         assert con.execute("SELECT COUNT(*) FROM ai_calls").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("extra", [
+    {"edit_mode": "unknown"},
+    {"edit_mode": "masked"},
+    {"edit_mode": "masked", "mask_points": "[]"},
+    {"edit_mode": "masked", "mask_points": "[[0,0],[1,0],[2,1]]"},
+])
+def test_invalid_edit_mode_or_polygon_does_not_start_paid_call(app, client, csrf, new_post, settings, extra):
+    identifier = new_post()
+    enable_image(settings)
+    response = client.post(f"/posts/{identifier}/images", data={**image_form(csrf), **extra}, headers={"Accept": "application/json"})
+    assert response.status_code == 422
+    with connect(settings) as con:
+        assert con.execute("SELECT COUNT(*) FROM ai_calls").fetchone()[0] == 0
+
+
+def test_polygon_mode_edits_background_and_preserves_selected_product(app, client, csrf, new_post, settings):
+    identifier = new_post(preset_id="natural")
+    enable_image(settings)
+    requests = []
+    def handler(request):
+        payload = json.loads(request.content)
+        requests.append(payload)
+        assert "지정된 상품 내부는 보존하고 배경만 편집" in payload["prompt"]
+        with Image.open(io.BytesIO(base64.b64decode(payload["mask"]["image_url"].split(",")[1]))) as mask:
+            assert mask.getpixel((512, 512))[3] == 255
+            assert mask.getpixel((10, 10))[3] == 0
+        return httpx.Response(200, json=image_body())
+    with httpx.Client(transport=httpx.MockTransport(handler)) as external:
+        app.state.image_ai.client = external
+        response = client.post(f"/posts/{identifier}/images", data={**image_form(csrf), "edit_mode": "masked", "mask_points": json.dumps(POINTS)}, headers={"Accept": "application/json"})
+    assert response.status_code == 202 and len(requests) == 1
+    with connect(settings) as con:
+        job = con.execute("SELECT * FROM image_generations").fetchone()
+        assert json.loads(job["parameters"])["edit_mode"] == "masked"
+        assert json.loads(job["mask_points"]) == POINTS
+        assert balance(con, "local-owner") == 5
+    with Image.open(settings.data_dir / "generated" / job["filename"]) as result:
+        assert result.getpixel((512, 512)) == (32, 80, 120)
+        assert result.getpixel((10, 10)) == (255, 165, 0)
 
 
 def test_automatic_edit_keeps_model_output_and_needs_explicit_selection(

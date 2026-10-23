@@ -1,4 +1,4 @@
-"""GPT Image 2 자동 편집·후보·원가를 관리하고 과거 마스크 작업을 호환한다."""
+"""GPT Image 2 자동·영역 지정 편집과 후보·원가·과거 마스크 작업을 관리한다."""
 
 import base64
 import binascii
@@ -137,7 +137,7 @@ class ImageAI:
     def queue(self, owner_id, post_id, revision, points=None, mask_png=""):
         """소유권·버전·호출 한도·통합 예산을 확인하고 대기 작업 ID를 반환"""
         cfg = self.settings
-        # 과거 내부 호출만 마스크를 받는다. 웹 화면의 새 요청은 영역 없는 자동 편집이다.
+        # 점으로 상품을 지정한 경우에만 내부를 보존하는 배경 편집을 사용한다.
         if points is not None:
             points = mask_points(points)
         if mask_png:
@@ -172,6 +172,12 @@ class ImageAI:
                     for key in ("palette", "lighting", "background", "composition")
                 }}, ensure_ascii=False
             )
+            if points is not None:
+                prompt = (
+                    "지정된 상품 내부는 보존하고 배경만 편집한다. 상품의 위치·크기·형태·색·토핑을 바꾸지 마라. "
+                    "조명·구도 변경은 배경에만 적용하고, 상품 경계에 자연스러운 접촉 그림자를 만든다.\n"
+                    + prompt
+                )
             call_id = reserve(
                 con,
                 cfg,

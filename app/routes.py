@@ -20,7 +20,7 @@ from .db import account, balance, connect, owned_post
 from .costs import spent
 from .instagram import caption_text
 from .rendering import UPLOAD_BYTES, atomic_write, normalize_photo, render
-from .image_ai import BUSY_PUBLISH
+from .image_ai import BUSY_PUBLISH, mask_points
 
 router = APIRouter()
 Owner = Annotated[str, Depends(owner)]
@@ -35,7 +35,7 @@ class ProductInput(BaseModel):
     show_price: bool = False
     period: str = Field(max_length=100, default="")
     purpose: str = Field(pattern="^(신메뉴 안내|시즌 안내|매장 소식|행사 안내)$")
-    layout: str = Field(pattern="^(frame|split)$", default="frame")
+    layout: str = Field(pattern="^(frame|split)$", default="split")
     aspect: str = Field(pattern="^(portrait|square)$", default="portrait")
     preset_id: str = Field(
         pattern="^(keep|natural|minimal|modern|fresh)$", default="keep"
@@ -404,7 +404,7 @@ def create_post(request: Request, who: Owner, form: Form):
                     original_file,
                     item.product_name,
                     caption,
-                    item.layout,
+                    "split",
                     item.aspect,
                     shop["color"],
                     int(time.time()),
@@ -427,7 +427,7 @@ def create_post(request: Request, who: Owner, form: Form):
                         result.title,
                         result.caption,
                         result.hashtags,
-                        result.layout,
+                        "split",
                         post_id,
                     ),
                 )
@@ -530,10 +530,15 @@ def generate_image(
     request: Request, post_id: str, tasks: BackgroundTasks, who: Owner, form: Form
 ):
     revision = confirmed(form)
+    mode = str(form.get("edit_mode", "automatic"))
+    if mode not in {"automatic", "masked"}:
+        raise HTTPException(422, "편집 방식을 확인해주세요")
+    points = mask_points(str(form.get("mask_points", ""))) if mode == "masked" else None
     job = request.app.state.image_ai.queue(
         who,
         post_id,
         revision,
+        points,
     )
     tasks.add_task(request.app.state.image_ai.run, job)
     if "application/json" in request.headers.get("accept", ""):
@@ -631,7 +636,7 @@ def edit_post(request: Request, post_id: str, who: Owner, form: Form):
                 fields.hashtags,
                 fields.price,
                 fields.show_price,
-                fields.layout,
+                "split",
                 fields.aspect,
                 fields.promotion,
                 post_id,
@@ -671,7 +676,7 @@ def regenerate(request: Request, post_id: str, who: Owner, form: Form):
             )
         con.execute(
             "UPDATE posts SET title=?, caption=?, hashtags=?, layout=?, source='ai', revision=revision+1 WHERE id=?",
-            (result.title, result.caption, result.hashtags, result.layout, post_id),
+            (result.title, result.caption, result.hashtags, "split", post_id),
         )
     return back("/posts/" + post_id)
 

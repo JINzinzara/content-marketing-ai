@@ -1,6 +1,7 @@
 """사진 검증·회전·한글 합성·규격·상품 색과 저장 실패 검증"""
 
 import io
+import json
 
 import pytest
 from fastapi import HTTPException
@@ -79,6 +80,20 @@ def test_export_dimensions_long_korean_and_original_color(
         assert result.size == size
         pixel = result.getpixel((540, 500 if aspect == "portrait" else 400))
         assert all(abs(a - b) < 5 for a, b in zip(pixel, (32, 80, 120)))
+        for xy in ((0, 0), (size[0]-1, 0), (0, size[1]-1), (size[0]-1, size[1]-1)):
+            assert all(abs(a-b) < 5 for a, b in zip(result.getpixel(xy), (32, 80, 120)))
+
+
+def test_feed_image_ignores_old_frames_brand_name_and_logo(new_post, settings):
+    identifier = new_post()
+    with connect(settings) as con:
+        post = owned_post(con, "local-owner", identifier)
+    plain = render(settings, {**post, "layout": "split"}, "첫 가게")
+    snapshot = json.loads(post["style_snapshot"])
+    snapshot["brand"] = {"name": "사진에 없어야 할 이름", "logo_file": "missing-logo.jpg"}
+    framed = {**post, "layout": "frame", "style_snapshot": json.dumps(snapshot)}
+    assert render(settings, framed, "다른 가게") == plain
+    assert render(settings, framed, "다른 가게", preview=True) == plain
 
 
 def test_exif_orientation_and_metadata_removed():

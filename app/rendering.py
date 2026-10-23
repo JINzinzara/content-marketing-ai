@@ -1,4 +1,4 @@
-"""업로드된 이미지를 검증하고 승인한 이미지·원본 상품·한글·브랜드를 게시 규격에 맞게 합성"""
+"""사진을 검증하고 원본 또는 승인한 후보를 게시 규격에 가득 채워 출력"""
 
 import io
 import os
@@ -11,7 +11,6 @@ from fastapi import HTTPException
 from PIL import Image, ImageCms, ImageDraw, ImageFont, ImageOps, UnidentifiedImageError
 
 from .db import connect
-from .styles import post_style
 
 FONT = Path(__file__).parent / "assets/fonts/NotoSansKR.ttf"
 EMOJI_FONT = FONT.with_name("NotoEmoji.ttf")
@@ -143,11 +142,8 @@ def draw_text(draw, text, box, *, size, fill, minimum=24):
 
 
 def render(settings, post, shop_name, *, preview=False):
-    """원본 또는 사용자가 승인한 후보로 이미지를 합성해 JPEG bytes로 반환"""
+    """원본 또는 승인한 후보를 비율에 맞춰 채우고 JPEG bytes로 반환"""
     width, height = ASPECTS[post["aspect"]]
-    image = Image.new("RGB", (width, height), "#f5f1e8")
-    draw = ImageDraw.Draw(image)
-    accent = post["color"]
     photo = settings.data_dir / "originals" / post["original_file"]
     if post.get("selected_image_id"):
         with connect(settings) as con:
@@ -158,43 +154,11 @@ def render(settings, post, shop_name, *, preview=False):
         if not candidate or candidate["style_snapshot"] != post["style_snapshot"]:
             raise HTTPException(409, "현재 스타일에 맞는 이미지를 다시 선택해주세요")
         photo = settings.data_dir / "generated" / candidate["filename"]
-    brand = post_style(post).get("brand", {})
-    logo = brand.get("logo_file", "")
-    price_space = 170 if post.get("show_price") and post["price"] else 0
     with Image.open(photo) as src:
-        if post["layout"] == "frame":
-            photo_box = (48, 96, width - 96, height - 144 - price_space)
-            price_box = (56, height - 145, width - 112, 85)
-        else:
-            photo_box = (0, 0, width, height - price_space)
-            price_box = (56, int(height * 0.89), width - 112, int(height * 0.08))
-        x, y, w, h = photo_box
-        scaled = ImageOps.contain(src, (w, h), Image.Resampling.LANCZOS)
-        draw.rectangle((x, y, x + w, y + h), fill="white")
-        image.paste(scaled, (x + (w - scaled.width) // 2, y + (h - scaled.height) // 2))
-    if post["layout"] == "frame":
-        draw_text(
-            draw,
-            brand.get("name") or shop_name or "우리 가게",
-            (56, 32, width - (240 if logo else 112), 45),
-            size=28,
-            fill=accent,
-        )
-    if logo:
-        with Image.open(settings.data_dir / "references" / logo) as mark:
-            mark = ImageOps.contain(mark.convert("RGB"), (104, 60))
-            image.paste(mark, (width - 136, 24))
+        image = ImageOps.fit(src.convert("RGB"), (width, height), Image.Resampling.LANCZOS)
     if post.get("show_price") and post["price"]:
-        draw_text(draw, post["price"], price_box, size=42, fill=accent)
-    if preview:
-        draw.rectangle((width - 224, height - 48, width, height), fill="#ffffff")
-        draw.text(
-            (width - 206, height - 38),
-            "미리보기",
-            font=font(24),
-            fill="#777777",
-            anchor="lt",
-        )
+        draw_text(ImageDraw.Draw(image), post["price"],
+                  (56, height - 145, width - 112, 85), size=42, fill=post["color"])
     buf = io.BytesIO()
     image.save(buf, "JPEG", quality=92, optimize=True)
     return buf.getvalue()

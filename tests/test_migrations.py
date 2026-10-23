@@ -47,7 +47,7 @@ def test_existing_database_is_upgraded_without_losing_rows_or_trial_history(tmp_
             and post["show_price"] == 0
             and balance(con, "existing") == 4
         )
-        assert post["revision"] == 3 and post["rendered_revision"] == 1
+        assert post["revision"] == 4 and post["rendered_revision"] == 1
         assert post["finished_file"] == "old-final.jpg" and post["caption"] == "본문"
         pending = owned_post(con, "existing", "pending")
         assert (
@@ -56,4 +56,29 @@ def test_existing_database_is_upgraded_without_losing_rows_or_trial_history(tmp_
             and pending["publish_state"] == "publishing"
         )
         assert con.execute("SELECT COUNT(*) FROM credits").fetchone()[0] == 2
-        assert con.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert con.execute("PRAGMA user_version").fetchone()[0] == 5
+
+
+def test_full_photo_upgrade_invalidates_old_export_once_and_preserves_publishing(client, new_post, settings):
+    from app.credits import finalize
+
+    ready, publishing = new_post(), new_post()
+    for identifier in (ready, publishing):
+        finalize(settings, "local-owner", identifier)
+    with connect(settings, write=True) as con:
+        con.execute("UPDATE posts SET publish_state='publishing' WHERE id=?", (publishing,))
+        old = owned_post(con, "local-owner", publishing)
+        con.execute("PRAGMA user_version=4")
+    approved = (settings.data_dir / "finished" / old["finished_file"]).read_bytes()
+    initialize(settings)
+    initialize(settings)
+    with connect(settings) as con:
+        assert owned_post(con, "local-owner", ready)["revision"] == 2
+        assert owned_post(con, "local-owner", publishing)["revision"] == old["revision"]
+        assert balance(con, "local-owner") == 3
+    assert client.get(f"/posts/{ready}/download").status_code == 409
+    assert client.get(f"/posts/{publishing}/image").content == approved
+    finalize(settings, "local-owner", ready, expected_revision=2)
+    assert client.get(f"/posts/{ready}/download").content == client.get(f"/posts/{ready}/image").content
+    with connect(settings) as con:
+        assert balance(con, "local-owner") == 3

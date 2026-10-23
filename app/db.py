@@ -58,7 +58,10 @@ def initialize(settings):
         if con.execute("PRAGMA user_version").fetchone()[0] < 4:
             # 제목을 빼기 전 완성본을 새 미리보기와 같은 파일로 취급하지 않는다.
             con.execute("UPDATE posts SET revision=revision+1 WHERE finished_file IS NOT NULL AND publish_state NOT IN ('creating','container_ready','publishing','unknown')")
-        con.execute("PRAGMA user_version=4")
+        if con.execute("PRAGMA user_version").fetchone()[0] < 5:
+            # 예전 프레임 완성본을 새 꽉 찬 미리보기와 동일한 버전으로 취급하지 않는다.
+            con.execute("UPDATE posts SET revision=revision+1, layout='split' WHERE deleted_at IS NULL AND publish_state NOT IN ('creating','container_ready','publishing','unknown')")
+        con.execute("PRAGMA user_version=5")
 
 
 def ensure_account(con, owner_id):
