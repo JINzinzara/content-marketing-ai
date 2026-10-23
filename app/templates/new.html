@@ -1,14 +1,14 @@
 {% extends 'base.html' %}{% block content %}
-<a class="back-link" href="/studio">← 작업실</a><div class="page-heading"><h1>새 게시물 만들기</h1><p>특징만 알려주세요</p></div>
+<a class="back-link" href="/studio">← 작업실</a><div class="page-heading"><h1>새 게시물 만들기</h1><p>특징을 알려주세요</p></div>
 <div class="two-columns"><form class="panel stack" action="/posts" method="post" enctype="multipart/form-data"><input type="hidden" name="csrf" value="{{ csrf }}">
 <label for="photo">새 게시물 이미지 <span class="required">*</span></label><div class="upload-box"><span class="upload-symbol">↥</span><strong>상품 사진 선택</strong><span>JPG·PNG·WebP</span><input type="file" name="photo" id="photo" accept="image/jpeg,image/png,image/webp" required><img id="local-photo" alt="업로드한 원본 사진" hidden></div><p id="file-message" class="muted" role="status"></p>
 <label for="product_name">상품명 <span class="required">*</span></label><input id="product_name" name="product_name" maxlength="60" placeholder="예: 가을 밤 라테" required>
-<label for="facts">확인된 상품 특징</label><textarea id="facts" name="facts" rows="4" maxlength="1200" placeholder="예: 직접 만든 밤 크림"></textarea>
+<label for="facts">상품 특징 또는 강조 내용</label><textarea id="facts" name="facts" rows="4" maxlength="1200" placeholder="예: 직접 만든 밤 크림"></textarea>
 <label for="period">판매 기간·조건 <span class="muted">선택</span></label><input id="period" name="period" maxlength="100" placeholder="예: 10월 한정 판매">
 <details><summary>가격 표시 · 선택 <span class="muted">선택</span></summary><div class="stack"><label for="price">확인된 가격</label><input id="price" name="price" maxlength="40" placeholder="예: 6,500원"><label class="check"><input type="checkbox" name="show_price" value="true"><span>가격 표시 사용</span></label><small class="muted">기본은 가격 비표시입니다</small></div></details>
 <label for="purpose">이번 게시물의 목적</label><select id="purpose" name="purpose"><option>신메뉴 안내</option><option>시즌 안내</option><option>매장 소식</option><option>행사 안내</option></select>
 {% include '_style_choices.html' %}
 <div class="form-grid"><div><label for="aspect">이미지 규격</label><select id="aspect" name="aspect"><option value="portrait">피드 세로형 · 4:5</option><option value="square">피드 정사각형 · 1:1</option></select></div><div><label for="layout">사진 배치</label><select id="layout" name="layout"><option value="frame">여백 프레임</option><option value="split">사진 중심</option></select></div></div>
 <button class="button primary" type="submit" {% if remaining == 0 %}disabled{% endif %}>{{ 'AI 초안 만들기' if cfg.ai_ready else '미리보기 만들기' }} →</button><small class="muted">{{ '게시 전 직접 확인' if cfg.ai_ready else '입력 문구로 시작' }}</small>
-</form><aside class="panel guide-card"><h2>사진 한 장, 새 분위기</h2><div class="guide-point"><span>01</span><div><strong>가게 스타일 적용</strong><p>고정 기준 유지</p></div></div><div class="guide-point"><span>02</span><div><strong>이미지는 다음 단계</strong><p>영역 없이 자동 편집</p></div></div><div class="guide-point"><span>03</span><div><strong>확정 시 1건 사용</strong><p>AI 호출 한도 별도</p></div></div><div class="quota-note">최초 완성본 <strong>5건 무료</strong><br><small>이후 제작권 구매</small></div></aside></div>
+</form><aside class="panel guide-card"><h2>사진 한 장, 일관된 스타일</h2><div class="guide-point"><span>01</span><div><strong>가게 스타일 적용</strong><p>고정 기준 유지</p></div></div><div class="guide-point"><span>02</span><div><strong>이미지는 다음 단계</strong><p>"영역 없이" 또는 "영역 고정" 자동 편집</p></div></div><div class="guide-point"><span>03</span><div><strong>확정 시 1건 사용</strong><p>AI 호출 한도 별도</p></div></div><div class="quota-note">최초 완성본 <strong>5건 무료</strong><br><small>이후 제작권 구매</small></div></aside></div>
 {% endblock %}

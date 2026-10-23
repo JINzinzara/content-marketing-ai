@@ -1,15 +1,15 @@
 {% extends 'base.html' %}{% block content %}
 <section class="hero">
-  <div class="hero-message"><div class="speech-bubble"><h1>우리 가게, 다음 이야기</h1><p class="hero-copy">사진 한 장으로 시작</p></div>
+  <div class="hero-message"><div class="speech-bubble"><h1>매번 새로운 개시물,<br>신경쓰이지 않으신가요?</h1><p class="hero-copy">사진 한 장으로 문구 추천부터 게시까지</p></div>
   <a href="/posts/new" class="button primary">새 게시물 만들기 <span>＋</span></a></div>
   <canvas class="fish-character fish-story" data-crop="1500,320,780,530" role="img" aria-label="이야기하는 금붕어"></canvas>
 </section>
 <section class="steps" aria-label="제작 흐름">
-  <a href="/shop"><span class="step-number">01</span><div><strong>스타일</strong><small>{{ '스타일 저장됨' if shop.style else '말투와 분위기를 정해요' }}</small></div><span>↗</span></a>
+  <a href="/shop"><span class="step-number">01</span><div><strong>스타일</strong><small>{{ '저장된 스타일' if shop.style else '말투와 분위기를 정해요' }}</small></div><span>↗</span></a>
   <a href="/posts/new"><span class="step-number">02</span><div><strong>게시물 제작</strong><small>사진과 상품 정보를 넣어요</small></div><span>↗</span></a>
   <a href="/analytics"><span class="step-number">03</span><div><strong>반응에서 다음 콘텐츠로</strong><small>게시 시간·반응 분석</small></div><span>↗</span></a>
 </section>
-<div class="section-heading"><div><h2>나만의 콘텐츠 <span class="count">{{ posts|length }}</span></h2></div><span class="muted">삭제 후 제작권 복구 불가</span></div>
+<div class="section-heading"><div><h2>콘텐츠 기록 <span class="count">{{ posts|length }}</span></h2></div><span class="muted">삭제 후 제작권 복구 불가</span></div>
 {% if posts %}<div class="post-grid">{% for post in posts %}
 <article class="post-card"><a href="/posts/{{ post.id }}"><div class="thumbnail"><img src="/posts/{{ post.id }}/image?v={{ post.revision }}" alt="{{ post.product_name }} 미리보기" loading="lazy"></div><div class="post-card-body"><span class="badge">{{ '게시 완료' if post.publish_state == 'published' else '결과 확인 필요' if post.publish_state == 'unknown' else '완성본' if post.finalized_at else '초안' }}</span><h3>{{ post.product_name }}</h3><p>{{ post.purpose }} · {{ '4:5 세로' if post.aspect == 'portrait' else '1:1 정사각형' }}</p></div></a>
 <form class="card-delete" action="/posts/{{ post.id }}/delete" method="post" data-confirm="콘텐츠를 삭제할까요?"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ post.revision }}"><input type="hidden" name="confirmed" value="yes"><button class="text-button danger" type="submit">삭제</button></form></article>
