@@ -3,11 +3,12 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}콘텐츠 관리 서비스{% endblock %}</title>
-  <link rel="stylesheet" href="/static/style.css"><script src="/static/ui.js" defer></script>
+  <link rel="preload" href="/fonts/KkakdugiDrafting-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/style.css?v=20261023"><script src="/static/ui.js" defer></script>
 </head>
 <body>
   <aside class="sidebar">
-    <a class="brand" href="/studio"><span class="brand-symbol">ㄷ</span><span>뽀스팅<span class="brand-sub">콘텐츠 관리 서비스</span></span></a>
+    <a class="brand" href="/studio"><span class="fish-character fish-logo" aria-hidden="true"></span><span>뽀스팅<span class="brand-sub">콘텐츠 관리 서비스</span></span></a>
     <div class="workspace-name">{{ shop.name if shop and shop.name else '작업실' }}</div>
     <nav aria-label="주 메뉴">
       <a href="/studio" {% if request.url.path == '/studio' %}aria-current="page"{% endif %}><span>◫</span> 콘텐츠 작업실</a>
