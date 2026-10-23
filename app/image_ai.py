@@ -80,6 +80,8 @@ def protected_canvas(original, points):
 
 def feather_mask(protected):
     """상품 안쪽 경계만 부드럽게 하고 선택 영역 밖은 완전히 편집 가능하게 유지"""
+    if any(protected.histogram()[1:255]):
+        return protected  # 확인한 알파 경계에 흐림을 두 번 적용하지 않는다.
     # 1024px 캔버스의 초기 보정값. 잘못 선택한 상품 경계 자체를 교정하지는 않는다.
     return ImageChops.darker(protected, protected.filter(ImageFilter.GaussianBlur(2)))
 
@@ -250,7 +252,7 @@ class ImageAI:
             )
             # 원본 배경과 참고 사진의 다른 상품이 생성 결과에 섞이지 않도록 제외한다.
             model_canvas = Image.new("RGB", SIZE, "white")
-            model_canvas.paste(canvas, (0, 0), protected)
+            model_canvas.paste(canvas, (0, 0), protected.point(lambda value: 255 if value else 0))
             images = [{"image_url": data_url(png_bytes(model_canvas))}]
             response = self.client.post(
                 "https://api.openai.com/v1/images/edits",

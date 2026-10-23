@@ -1,4 +1,28 @@
 /** 폼 중복 클릭·본문 복사·원본 미리보기·키보드 지원 상품 보존 영역을 관리한다. */
+// 원본 그림을 유지하고 표시 배율에 맞춘 고품질 축소로 작은 로고의 계단 현상을 줄인다.
+const fishImage = new Image();
+fishImage.addEventListener('load', () => {
+  for (const canvas of document.querySelectorAll('canvas.fish-character')) {
+    const draw = () => {
+      const width = canvas.getBoundingClientRect().width;
+      if (!width) return;
+      const crop = canvas.dataset.crop.split(',').map(Number);
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.round(width * ratio);
+      canvas.height = Math.round(width * crop[3] / crop[2] * ratio);
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(fishImage, ...crop, 0, 0, canvas.width, canvas.height);
+      canvas.style.backgroundImage = 'none';
+    };
+    new ResizeObserver(draw).observe(canvas);
+    window.addEventListener('resize', draw);
+    draw();
+  }
+});
+fishImage.src = '/static/fish-characters.png';
+
 document.addEventListener('submit', event => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement) || form.method.toLowerCase() !== 'post') return;
@@ -77,8 +101,10 @@ if (maskCanvas && maskSource) {
   const cutout = document.getElementById('mask-cutout');
   const message = document.getElementById('mask-message');
   const segmentButton = document.getElementById('segment-product');
+  const tool = document.getElementById('mask-tool');
+  const refine = document.getElementById('mask-refine');
   let selectionVersion = 0;
-  let points = [], cursor = [0.5, 0.5], keyboard = false;
+  let points = [], corrections = [], cursor = [0.5, 0.5], keyboard = false;
   function clearAutomaticMask() {
     selectionVersion++;
     maskInput.value = ''; cutout.hidden = true;
@@ -99,13 +125,31 @@ if (maskCanvas && maskSource) {
       const [x, y] = [cursor[0] * maskCanvas.width, cursor[1] * maskCanvas.height];
       context.strokeStyle = '#e46933'; context.lineWidth = 3; context.strokeRect(x - 6, y - 6, 12, 12);
     }
+    for (const [x, y, label] of corrections) {
+      const px = x * maskCanvas.width, py = y * maskCanvas.height;
+      context.fillStyle = label ? '#245e3b' : '#a52a50';
+      context.beginPath(); context.arc(px, py, 10, 0, Math.PI * 2); context.fill();
+      context.strokeStyle = '#fff'; context.lineWidth = 2;
+      context.beginPath(); context.moveTo(px - 5, py); context.lineTo(px + 5, py);
+      if (label) { context.moveTo(px, py - 5); context.lineTo(px, py + 5); }
+      context.stroke();
+    }
     document.getElementById('mask-points').value = JSON.stringify(points);
-    message.textContent = mode.value === 'auto'
-      ? (points.length === 4 ? '상품 자동 선택을 누르세요' : '상자의 양 끝을 누르세요')
+    document.getElementById('segment-label').textContent = corrections.length ? '보정 적용' : '상품 자동 선택';
+    message.textContent = maskInput.value ? '분리 결과를 확인하세요' : mode.value === 'auto'
+      ? (corrections.length ? `${corrections.length}/20점 · 보정 적용` : points.length === 4 ? '상품 자동 선택을 누르세요' : '상자의 양 끝을 누르세요')
       : `${points.length}개 점 · 안쪽 보존`;
   }
   function addPoint(point) {
-    clearAutomaticMask();
+    if (mode.value === 'auto' && tool.value !== 'box') {
+      if (points.length !== 4) { message.textContent = '상품 상자를 먼저 표시'; return; }
+      if (corrections.length >= 20) { message.textContent = '보정점은 최대 20개'; return; }
+      clearAutomaticMask();
+      corrections.push([...point, tool.value === 'include' ? 1 : 0]);
+      drawMask();
+      return;
+    }
+    clearAutomaticMask(); corrections = [];
     if (mode.value === 'auto') {
       if (points.length !== 1) points = [point];
       else {
@@ -130,17 +174,26 @@ if (maskCanvas && maskSource) {
     const movement = { ArrowLeft: [-0.02, 0], ArrowRight: [0.02, 0], ArrowUp: [0, -0.02], ArrowDown: [0, 0.02] }[event.key];
     if (movement) { event.preventDefault(); keyboard = true; cursor = cursor.map((value, index) => Math.max(0, Math.min(1, value + movement[index]))); drawMask(); }
     if (event.key === 'Enter') { event.preventDefault(); addPoint([...cursor]); }
-    if (event.key === 'Backspace') { event.preventDefault(); clearAutomaticMask(); points.pop(); drawMask(); }
+    if (event.key === 'Backspace') { event.preventDefault(); undo(); }
   });
-  document.getElementById('mask-undo').addEventListener('click', () => { clearAutomaticMask(); points.pop(); drawMask(); });
-  document.getElementById('mask-reset').addEventListener('click', () => { clearAutomaticMask(); points = []; drawMask(); });
-  mode.addEventListener('change', () => { clearAutomaticMask(); points = []; drawMask(); });
+  function undo() { clearAutomaticMask(); if (corrections.length) corrections.pop(); else points.pop(); drawMask(); }
+  document.getElementById('mask-undo').addEventListener('click', undo);
+  document.getElementById('mask-reset').addEventListener('click', () => { clearAutomaticMask(); points = []; corrections = []; tool.value = 'box'; drawMask(); });
+  mode.addEventListener('change', () => {
+    clearAutomaticMask(); points = []; corrections = []; tool.value = 'box';
+    document.getElementById('mask-corrections').hidden = mode.value !== 'auto';
+    segmentButton.hidden = mode.value !== 'auto'; drawMask();
+  });
+  refine.addEventListener('change', () => { clearAutomaticMask(); drawMask(); });
   segmentButton.addEventListener('click', async () => {
     if (mode.value !== 'auto' || points.length !== 4) { message.textContent = '상품 상자를 지정하세요'; return; }
+    clearAutomaticMask();
     const version = selectionVersion;
     const form = document.getElementById('image-generation');
     const data = new FormData();
     for (const name of ['csrf', 'revision', 'mask_points']) data.set(name, form.elements[name].value);
+    data.set('corrections', JSON.stringify(corrections));
+    data.set('refine_edges', refine.checked ? 'yes' : 'no');
     segmentButton.disabled = true; segmentButton.setAttribute('aria-busy', 'true');
     document.getElementById('segment-spinner').hidden = false;
     message.textContent = '상품 분리 중';

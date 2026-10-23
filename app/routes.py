@@ -1,6 +1,7 @@
 """사용자의 가게 프로필·스타일 선택·텍스트/이미지 제작·확정·게시·분석 요청을 연결"""
 
 import hashlib
+import io
 import json
 import re
 import time
@@ -11,6 +12,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.datastructures import UploadFile
+from PIL import Image, ImageOps
 
 from . import analytics, styles
 from .text_ai import Recommendation, Style
@@ -21,7 +23,7 @@ from .costs import spent
 from .instagram import caption_text
 from .rendering import UPLOAD_BYTES, atomic_write, normalize_photo, render
 from .image_ai import BUSY_PUBLISH, mask_points, protected_canvas
-from .segmentation import encode_mask
+from .segmentation import SIZE, correction_points, encode_mask, refine_edges
 
 router = APIRouter()
 Owner = Annotated[str, Depends(owner)]
@@ -554,9 +556,22 @@ def product_mask(request: Request, post_id: str, who: Owner, form: Form):
             409, "게시물이 변경되었습니다. 새로고침 후 다시 선택해주세요"
         )
     points = mask_points(str(form.get("mask_points", "")))
+    corrections = correction_points(str(form.get("corrections", "[]")))
+    edge_mode = str(form.get("refine_edges", "yes"))
+    if edge_mode not in {"yes", "no"}:
+        raise HTTPException(422, "경계 보정을 확인하세요")
     raw = (cfg.data_dir / "originals" / post["original_file"]).read_bytes()
     canvas, region = protected_canvas(raw, points)
-    mask = request.app.state.segmenter.extract(canvas, region.getbbox())
+    with Image.open(io.BytesIO(raw)) as source:
+        fitted = ImageOps.contain(source, SIZE)
+    x, y = (SIZE[0] - fitted.width) // 2, (SIZE[1] - fitted.height) // 2
+    mapped = [
+        (x + round(a * (fitted.width - 1)), y + round(b * (fitted.height - 1)), label)
+        for a, b, label in corrections
+    ]
+    mask = request.app.state.segmenter.extract(canvas, region.getbbox(), corrections=mapped)
+    if edge_mode == "yes":
+        mask = refine_edges(canvas, mask)
     preview = canvas.convert("RGBA")
     preview.putalpha(mask)
     return {"mask_png": encode_mask(mask), "preview_png": encode_mask(preview)}

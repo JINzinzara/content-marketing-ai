@@ -1,0 +1,10 @@
+Griun Fromsol / 그리운 프롬솔
+Copyright GRIUN / TypeE
+Official source: https://www.griun.co.kr/fonts/fromsol
+Checked: 2026-10-23
+
+모든 사용 범위에서 자유롭게 사용이 가능합니다.
+다만, 폰트파일 개작⋅수정⋅판매는 금지됩니다.
+
+The supplied Griun_Fromsol-Rg.ttf is distributed unchanged.
+No subset, conversion or outline modification was made.
