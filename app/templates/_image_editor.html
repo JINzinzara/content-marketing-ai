@@ -24,7 +24,7 @@
 <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ post.revision }}">
 <input type="hidden" id="mask-points" name="mask_points" value="[]">
 <label class="check"><input type="checkbox" name="confirmed" value="yes" required><span>생성 1회 동의</span></label>
-<button class="button primary" type="submit" {% if image_block %}disabled{% endif %}>{{ '다른 후보 만들기' if images else '이미지 후보 생성' }}</button>
+<button class="button primary" type="submit" {% if image_block %}disabled{% endif %}>{{ '다른 이미지 생성' if images else '이미지 후보 생성' }}</button>
 <small id="image-attempts" class="muted">생성 {{ images|length }}/{{ image_limit }}회 · 실패 포함</small>
 <p id="image-block" class="help-text" role="status">{{ image_block }}</p>
 <button id="image-block-info" class="text-button" type="button" {% if not image_block %}hidden{% endif %}>안내 보기</button>
