@@ -88,6 +88,7 @@ def page(request, template, owner_id=None, **context):
             "cfg": {
                 "local": settings.environment == "local",
                 "ai_ready": settings.ai_ready,
+                "ai_missing": settings.ai_missing,
                 "image_ready": settings.image_ready,
                 "instagram_ready": settings.instagram_ready,
             },
@@ -248,19 +249,31 @@ def analyze_shop(request: Request, who: Owner, form: Form):
     cfg = request.app.state.settings
     shop = account(cfg, who)
     with connect(cfg) as con:
-        selected = list(
-            dict.fromkeys(str(value) for value in form.getlist("reference_id"))
-        )
-        if len(selected) > 3:
-            raise HTTPException(422, "참고 자료는 최대 3개까지 선택가능합니다")
+        selected = form.getlist("reference_id")
+        if "reference_ids" in form:
+            try:
+                selected = json.loads(str(form["reference_ids"]))
+            except (ValueError, TypeError, RecursionError):
+                raise HTTPException(422, "분석할 자료 선택을 확인해주세요") from None
+        if not isinstance(selected, list) or any(not isinstance(value, str) for value in selected):
+            raise HTTPException(422, "분석할 자료 선택을 확인해주세요")
+        selected = list(dict.fromkeys(selected))
         references = [
             styles.reference_data(cfg, con, who, identifier) for identifier in selected
         ]
     if not references and not shop["reference_notes"] and not shop["description"]:
         raise HTTPException(
-            422, "기존 게시물을 가저오거나 가게 설명·참고 자료를 먼저 저장해주세요"
+            422, "기존 게시물을 선택하거나 가게 설명·참고 자료를 먼저 저장해주세요"
         )
-    images = [row["image"] for row in references if row["image"]]
+    images, examples = [], []
+    for row in references:
+        if row["image"]:
+            images.append(row["image"])
+        examples.append({
+            "id": row["id"],
+            "caption": row["caption"][:2200],
+            "image_index": len(images) if row["image"] else None,
+        })
     result = request.app.state.ai.generate(
         who,
         "style",
@@ -268,10 +281,7 @@ def analyze_shop(request: Request, who: Owner, form: Form):
             "task": "style_analysis",
             "shop_description": shop["description"],
             "reference_notes": shop["reference_notes"],
-            "past_post_examples": [
-                {"id": row["id"], "caption": row["caption"][:2200]}
-                for row in references
-            ],
+            "past_post_examples": examples,
         },
         Style,
         images=images,

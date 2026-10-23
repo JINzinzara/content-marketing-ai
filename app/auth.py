@@ -31,7 +31,9 @@ def csrf_token(request):
 
 
 async def form_data(request: Request):
-    async with request.form(max_files=1, max_fields=40, max_part_size=16_384) as form:
+    # 선택 ID는 JSON 필드로 묶고 전체 요청의 기존 10MB 제한을 유지한다.
+    part_limit = 10 * 1024 * 1024 if request.url.path == "/shop/analyze" else 16_384
+    async with request.form(max_files=1, max_fields=40, max_part_size=part_limit) as form:
         actual = str(form.get("csrf", ""))
         expected = request.session.get("csrf", "")
         if not expected or not secrets.compare_digest(actual, expected):

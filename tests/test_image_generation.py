@@ -1,4 +1,4 @@
-"""모의 이미지 API로 자동 편집·과거 작업 호환·후보 승인·예산·복구 검증"""
+"""모의 이미지 API로 자동 편집·과거 요청 차단·후보 승인·예산·복구 검증"""
 
 import base64
 import io
@@ -9,12 +9,12 @@ from decimal import Decimal
 import httpx
 import pytest
 from fastapi import HTTPException
-from PIL import Image, ImageDraw
+from PIL import Image
 
 from app.costs import spent
 from app.credits import finalize
 from app.db import balance, connect, owned_post
-from app.image_ai import SIZE, composite, feather_mask, png_bytes
+from app.image_ai import SIZE, generated_png, png_bytes
 from app.main import create_app
 
 POINTS = [[0.25, 0.2], [0.75, 0.2], [0.75, 0.8], [0.25, 0.8]]
@@ -58,19 +58,40 @@ def image_form(csrf, revision=1):
     }
 
 
-def test_feather_blends_only_the_inner_edge_and_preserves_product_core():
-    original = Image.new("RGB", SIZE, "red")
-    mask = Image.new("L", SIZE, 0)
-    ImageDraw.Draw(mask).rectangle((256, 256, 768, 768), fill=255)
-    alpha = feather_mask(mask)
-    assert alpha.getpixel((512, 512)) == 255
-    assert 0 < alpha.getpixel((256, 512)) < 255
-    assert alpha.getpixel((255, 512)) == 0
-    with Image.open(io.BytesIO(composite(original, mask, png_bytes(Image.new("RGB", SIZE, "blue"))))) as result:
-        assert result.getpixel((512, 512)) == (255, 0, 0)
-        assert result.getpixel((255, 512)) == (0, 0, 255)
-        edge = result.getpixel((256, 512))
-        assert 0 < edge[0] < 255 and 0 < edge[2] < 255
+@pytest.mark.parametrize("kind", ["dimensions", "format", "too_large"])
+def test_generated_image_validation_rejects_invalid_output(kind):
+    if kind == "dimensions":
+        raw = png_bytes(Image.new("RGB", (2, 2)))
+    elif kind == "format":
+        out = io.BytesIO()
+        Image.new("RGB", SIZE).save(out, "GIF")
+        raw = out.getvalue()
+    else:
+        raw = b"x" * (16 * 1024 * 1024 + 1)
+    with pytest.raises(ValueError):
+        generated_png(raw)
+
+
+@pytest.mark.parametrize("mode", [None, "masked"])
+def test_old_mask_job_cannot_make_new_call_and_keeps_cost_reservation(app, new_post, settings, mode):
+    identifier = new_post(preset_id="natural")
+    enable_image(settings)
+    job_id = app.state.image_ai.queue("local-owner", identifier, 1)
+    with connect(settings, write=True) as con:
+        parameters = json.loads(con.execute("SELECT parameters FROM image_generations WHERE id=?", (job_id,)).fetchone()[0])
+        if mode is None:
+            parameters.pop("edit_mode")
+        else:
+            parameters["edit_mode"] = mode
+        parameters["product_mask_png"] = "obsolete-mask"
+        con.execute("UPDATE image_generations SET parameters=?, mask_points=? WHERE id=?", (json.dumps(parameters), json.dumps(POINTS), job_id))
+    with httpx.Client(transport=httpx.MockTransport(lambda r: pytest.fail("과거 누끼 요청은 외부 호출 금지"))) as external:
+        app.state.image_ai.client = external
+        app.state.image_ai.run(job_id)
+    with connect(settings) as con:
+        assert con.execute("SELECT state FROM image_generations WHERE id=?", (job_id,)).fetchone()[0] == "unknown"
+        assert con.execute("SELECT state FROM ai_calls").fetchone()[0] == "unknown"
+        assert spent(con) == 150000 and balance(con, "local-owner") == 5
 
 
 def test_automatic_edit_sends_full_original_without_mask_or_reference_products(
@@ -530,3 +551,26 @@ def test_other_post_and_other_account_cannot_use_private_images(
                 ).status_code
                 == 404
             )
+
+
+def test_existing_completed_mask_candidate_still_loads_without_mask_code(app, client, csrf, new_post, settings):
+    identifier = new_post(preset_id="natural")
+    enable_image(settings)
+    with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=image_body()))) as external:
+        app.state.image_ai.client = external
+        assert client.post(f"/posts/{identifier}/images", data=image_form(csrf)).status_code == 200
+    with connect(settings, write=True) as con:
+        row = con.execute("SELECT * FROM image_generations").fetchone()
+        image_id, filename = row["id"], row["filename"]
+        parameters = json.loads(row["parameters"])
+        parameters["edit_mode"] = "masked"
+        parameters["product_mask_png"] = "obsolete-mask"
+        con.execute("UPDATE image_generations SET parameters=? WHERE id=?", (json.dumps(parameters), image_id))
+    before = (settings.data_dir / "generated" / filename).read_bytes()
+    assert client.get(f"/posts/{identifier}/images/{image_id}").content == before
+    response = client.post(f"/posts/{identifier}/images/select", data={"csrf": csrf, "revision": 1, "confirmed": "yes", "image_id": image_id})
+    assert response.status_code == 200
+    with connect(settings) as con:
+        assert owned_post(con, "local-owner", identifier)["selected_image_id"] == image_id
+        assert balance(con, "local-owner") == 5
+    assert (settings.data_dir / "generated" / filename).read_bytes() == before

@@ -58,6 +58,33 @@ document.getElementById('image-block-info')?.addEventListener('click', () => {
   showNotice(document.getElementById('image-block').textContent, {title:'이미지 생성 안내'});
 });
 
+document.getElementById('style-setup-info')?.addEventListener('click', () => {
+  showNotice(document.getElementById('style-setup-message').textContent, {title:'텍스트 AI 설정'});
+});
+const styleForm = document.getElementById('style-analysis');
+if (styleForm) {
+  const choices = [...document.querySelectorAll('#style-references input[name="reference_id"]')];
+  const selectAll = document.getElementById('references-all');
+  function updateSelection() {
+    const count = choices.filter(item => item.checked).length;
+    selectAll.checked = choices.length > 0 && count === choices.length;
+    selectAll.indeterminate = count > 0 && count < choices.length;
+    document.getElementById('references-count').textContent = `${count}개 선택`;
+  }
+  selectAll.addEventListener('change', () => {
+    for (const item of choices) item.checked = selectAll.checked;
+    updateSelection();
+  });
+  for (const item of choices) item.addEventListener('change', updateSelection);
+  updateSelection();
+  // 분석 개수를 폼 필드 수 제한과 분리한다. 선택 ID를 버리거나 일부만 보내지 않는다.
+  styleForm.addEventListener('formdata', event => {
+    const selected = event.formData.getAll('reference_id');
+    event.formData.delete('reference_id');
+    event.formData.set('reference_ids', JSON.stringify(selected));
+  });
+}
+
 document.addEventListener('submit', event => {
     const form = event.target;
     if (!(form instanceof HTMLFormElement) || form.method.toLowerCase() !== 'post') return;

@@ -114,7 +114,7 @@ def reference_list(con, owner_id):
             "preview": "/shop/references/" + r["id"],
         }
         for r in con.execute(
-            "SELECT * FROM style_references WHERE owner_id=? AND deleted_at IS NULL ORDER BY created_at DESC, rowid DESC LIMIT 30",
+            "SELECT * FROM style_references WHERE owner_id=? AND deleted_at IS NULL ORDER BY created_at DESC, rowid DESC",
             (owner_id,),
         )
     ]
@@ -131,7 +131,7 @@ def reference_list(con, owner_id):
             ),
         }
         for r in con.execute(
-            "SELECT * FROM history WHERE owner_id=? AND deleted_at IS NULL ORDER BY published_at DESC LIMIT 50",
+            "SELECT * FROM history WHERE owner_id=? AND deleted_at IS NULL ORDER BY published_at DESC",
             (owner_id,),
         )
     ]

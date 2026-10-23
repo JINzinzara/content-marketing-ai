@@ -194,3 +194,167 @@ def test_logo_upload_is_removed_and_new_posts_ignore_legacy_account_logo(
     assert 'action="/shop/logo"' not in client.get("/shop").text
     assert client.get("/data/references/legacy-logo.jpg").status_code == 404
     assert client.get("/posts/" + identifier + "/image").status_code == 200
+
+
+# 앱에 가져온 자료 수가 기존 표시·선택 한도를 넘는 경우를 함께 검증한다.
+def seed_many_references(settings, photo):
+    import io
+    from PIL import Image
+
+    out = io.BytesIO()
+    with Image.open(io.BytesIO(photo)) as image:
+        image.convert("RGB").save(out, "JPEG")
+    ids = []
+    with connect(settings, write=True) as con:
+        for n in range(55):
+            identifier = f"history-{n}"
+            ids.append("ig:" + identifier)
+            con.execute(
+                "INSERT INTO history(owner_id, media_id, caption, media_type, media_url) VALUES ('local-owner', ?, ?, ?, ?)",
+                (identifier, f"이전 게시물 {n}", "IMAGE" if n % 2 == 0 else "VIDEO", f"https://cdn.example/{n}.jpg"),
+            )
+        for n in range(35):
+            identifier = f"upload-{n}"
+            ids.append("local:" + identifier)
+            (settings.data_dir / "references" / (identifier + ".jpg")).write_bytes(out.getvalue())
+            con.execute(
+                "INSERT INTO style_references(id, owner_id, filename, caption, created_at) VALUES (?, 'local-owner', ?, ?, ?)",
+                (identifier, identifier + ".jpg", f"참고 자료 {n}", n),
+            )
+    return ids
+
+
+def style_response():
+    return {
+        "summary": "차분한 원목 분위기",
+        "attributes": {key: "" for key in FIELDS},
+        "evidence": ["가져온 자료의 배경과 말투"],
+        "uncertainties": ["서로 다른 행사 게시물은 구분 필요"],
+    }
+
+
+def test_all_imported_references_are_visible_and_can_be_selected(client, csrf, settings, photo):
+    from app.styles import reference_list
+    ids = seed_many_references(settings, photo)
+    with connect(settings) as con:
+        assert {r["id"] for r in reference_list(con, "local-owner")} == set(ids)
+    html = client.get("/shop").text
+    assert all(f'value="{identifier}"' in html for identifier in ids)
+    assert 'id="references-all"' in html and 'id="references-count"' in html
+    assert "최대 3개" not in html
+
+
+def test_analysis_accepts_more_than_three_selected_references(app, client, csrf, settings, photo):
+    from test_generation import enable, response_body
+    enable(settings)
+    ids = seed_many_references(settings, photo)[:4]
+    def handler(request):
+        payload = json.loads(request.content)
+        examples = json.loads(payload["input"][0]["content"][0]["text"])["past_post_examples"]
+        assert [item["id"] for item in examples] == ids
+        assert [item["image_index"] for item in examples] == [1, None, 2, None]
+        if request.url.path.endswith("input_tokens"):
+            return httpx.Response(200, json={"input_tokens": 100})
+        return httpx.Response(200, json=response_body(style_response()))
+    with httpx.Client(transport=httpx.MockTransport(handler)) as external:
+        app.state.ai.client = external
+        assert client.post("/shop/analyze", data={"csrf": csrf, "reference_id": ids}).status_code == 200
+    with connect(settings) as con:
+        assert latest_profile(con, "local-owner", "proposal")["reference_ids"] == ids
+
+
+def test_large_selection_uses_one_json_field_and_sends_every_reference(app, client, csrf, settings, photo):
+    from test_generation import enable, response_body
+    enable(settings)
+    ids = seed_many_references(settings, photo)
+    calls = []
+    def handler(request):
+        calls.append(request.url.path)
+        content = json.loads(request.content)["input"][0]["content"]
+        examples = json.loads(content[0]["text"])["past_post_examples"]
+        assert [item["id"] for item in examples] == ids
+        # 영상의 본문은 포함하지만 이미지가 없는 자료와 사진 순서를 혼동하지 않는다.
+        assert len(content) == 1 + 28 + 35
+        assert [r["image_index"] for r in examples if r["image_index"] is not None] == list(range(1, 64))
+        if request.url.path.endswith("input_tokens"):
+            return httpx.Response(200, json={"input_tokens": 100})
+        return httpx.Response(200, json=response_body(style_response()))
+    with httpx.Client(transport=httpx.MockTransport(handler)) as external:
+        app.state.ai.client = external
+        response = client.post("/shop/analyze", data={"csrf": csrf, "reference_ids": json.dumps(ids + [ids[0]])})
+    assert response.status_code == 200
+    assert calls == ["/v1/responses/input_tokens", "/v1/responses"]
+    with connect(settings) as con:
+        assert latest_profile(con, "local-owner", "proposal")["reference_ids"] == ids
+
+
+def test_large_selection_keeps_budget_guard_before_generation(app, client, csrf, settings, photo):
+    from test_generation import enable
+    enable(settings)
+    ids = seed_many_references(settings, photo)
+    calls = []
+    def handler(request):
+        calls.append(request.url.path)
+        assert request.url.path.endswith("input_tokens")
+        return httpx.Response(200, json={"input_tokens": 1_000_000})
+    with httpx.Client(transport=httpx.MockTransport(handler)) as external:
+        app.state.ai.client = external
+        response = client.post("/shop/analyze", data={"csrf": csrf, "reference_ids": json.dumps(ids)})
+    assert response.status_code == 402 and calls == ["/v1/responses/input_tokens"]
+    with connect(settings) as con:
+        assert latest_profile(con, "local-owner", "proposal") is None
+        assert con.execute("SELECT COUNT(*) FROM ai_calls").fetchone()[0] == 0
+
+
+def test_selection_json_above_old_field_size_is_not_truncated(app, client, csrf, settings):
+    from test_generation import enable, response_body
+    enable(settings)
+    ids = ["ig:" + str(n) + "x" * 180 for n in range(100)]
+    with connect(settings, write=True) as con:
+        for identifier in ids:
+            con.execute("INSERT INTO history(owner_id, media_id, caption) VALUES ('local-owner', ?, '')", (identifier[3:],))
+    encoded = json.dumps(ids)
+    assert len(encoded) > 16_384
+    def handler(request):
+        content = json.loads(request.content)["input"][0]["content"]
+        assert [r["id"] for r in json.loads(content[0]["text"])["past_post_examples"]] == ids
+        if request.url.path.endswith("input_tokens"):
+            return httpx.Response(200, json={"input_tokens": 100})
+        return httpx.Response(200, json=response_body(style_response()))
+    with httpx.Client(transport=httpx.MockTransport(handler)) as external:
+        app.state.ai.client = external
+        assert client.post("/shop/analyze", data={"csrf": csrf, "reference_ids": encoded}).status_code == 200
+
+
+def test_invalid_selection_and_foreign_reference_are_rejected_before_ai(app, client, csrf, settings):
+    from app.db import ensure_account
+    with connect(settings, write=True) as con:
+        ensure_account(con, "other")
+        con.execute("INSERT INTO history(owner_id, media_id, caption) VALUES ('other','private','private-caption')")
+    for value in ("broken", "null", '"ig:private"', '[{}]', '[1]', "[" * 1100):
+        assert client.post("/shop/analyze", data={"csrf": csrf, "reference_ids": value}).status_code == 422
+    assert client.post("/shop/analyze", data={"csrf": csrf, "reference_ids": '["ig:private"]'}).status_code == 404
+    assert client.post("/shop/analyze", data={"csrf": "wrong", "reference_ids": '[]'}).status_code == 403
+    with connect(settings) as con:
+        assert con.execute("SELECT COUNT(*) FROM ai_calls").fetchone()[0] == 0
+
+
+def test_disabled_analysis_explains_missing_settings_without_exposing_values(app, client, csrf, settings):
+    from test_generation import enable
+    enable(settings)
+    secret = settings.openai_key = "private-value-never-render"
+    settings.openai_enabled = False
+    settings.output_rate = 0
+    assert settings.ai_missing == ["OPENAI_ENABLED=true", "OPENAI_OUTPUT_USD_PER_MILLION > 0"]
+    html = client.get("/shop").text
+    assert 'id="style-setup-info"' in html and 'id="style-setup-message"' in html
+    assert "텍스트 AI 설정 필요" in html and "OPENAI_ENABLED=true" in html
+    assert secret not in html
+    with connect(settings, write=True) as con:
+        con.execute("UPDATE accounts SET description='가게 소개' WHERE id='local-owner'")
+    response = client.post("/shop/analyze", data={"csrf": csrf})
+    assert response.status_code == 503 and "OPENAI_ENABLED=true" in response.text and secret not in response.text
+    settings.openai_enabled, settings.output_rate = True, 50
+    assert settings.ai_ready
+    html = client.get("/shop").text
+    assert 'id="style-setup-info"' not in html and secret not in html

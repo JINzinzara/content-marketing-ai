@@ -41,6 +41,7 @@ INSTRUCTIONS = """너는 작은 베이커리 카페의 Instagram 콘텐츠 제�
 - 문구 생성에서는 frame 또는 split 레이아웃만 선택한다. 상품은 임의로 다시 그리지 않는다.
 - show_price가 false이면 제목·본문·해시태그에 가격을 쓰지 않는다. 가격 표시는 사용자가 켠 경우에만 허용한다.
 - 스타일 분석은 색감·조명·배경·구도·글자 배치·말투를 항목별로 설명하고 모르면 빈 문자열로 남긴다.
+- image_index는 첨부 이미지의 1부터 시작하는 순서다. 해당 이미지와 자료 ID를 연결해 분석한다.
 - 근거에는 어떤 항목을 어느 참고 자료 ID에서 관찰했는지 적고, 확인할 수 없는 내용은 불확실성에 남긴다.
 - 색온도·글꼴을 정확히 알아냈다고 주장하지 말고 상품색과 배경색을 구분한다.
 - 고정 브랜드 규칙과 이번 선택을 이미 조합한 속성을 따르며 임의 혼합 비율을 만들지 않는다.
@@ -112,7 +113,7 @@ class TextAI:
         cfg = self.settings
         if not cfg.ai_ready:
             raise HTTPException(
-                503, "OpenAI 모델·단가·비용 한도를 설정한 뒤 AI 생성을 시작해주세요"
+                503, "텍스트 AI 설정이 필요합니다.\n" + "\n".join(cfg.ai_missing)
             )
         content = [{"type": "input_text", "text": json.dumps(data, ensure_ascii=False)}]
         content += [

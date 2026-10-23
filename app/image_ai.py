@@ -1,4 +1,4 @@
-"""GPT Image 2 자동 편집·후보·원가와 과거 작업 호환을 관리한다."""
+"""GPT Image 2 자동 편집·후보 검증·원가·작업 상태를 관리한다."""
 
 import base64
 import binascii
@@ -11,13 +11,12 @@ from statistics import median
 
 import httpx
 from fastapi import HTTPException
-from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageOps, UnidentifiedImageError
+from PIL import Image, UnidentifiedImageError
 
 from .costs import microusd, reserve
 from .db import balance, connect, owned_post
 from .rendering import atomic_write
 from .styles import post_style, reference_data
-from .segmentation import decode_mask
 
 SIZE = (1024, 1024)
 BUSY_PUBLISH = {"creating", "container_ready", "publishing", "unknown"}
@@ -29,42 +28,14 @@ def png_bytes(image):
     return out.getvalue()
 
 
-def protected_canvas(original, points):
-    """원본 비율의 캔버스와 보존할 상품 영역이 흰색인 마스크 반환"""
-    with Image.open(io.BytesIO(original)) as source:
-        fitted = ImageOps.contain(source.convert("RGB"), SIZE, Image.Resampling.LANCZOS)
-    canvas = Image.new("RGB", SIZE, "white")
-    x, y = (SIZE[0] - fitted.width) // 2, (SIZE[1] - fitted.height) // 2
-    canvas.paste(fitted, (x, y))
-    mask = Image.new("L", SIZE, 0)
-    ImageDraw.Draw(mask).polygon(
-        [
-            (x + round(a * (fitted.width - 1)), y + round(b * (fitted.height - 1)))
-            for a, b in points
-        ],
-        fill=255,
-    )
-    return canvas, mask
-
-
-def feather_mask(protected):
-    """상품 안쪽 경계만 부드럽게 하고 선택 영역 밖은 완전히 편집 가능하게 유지"""
-    if any(protected.histogram()[1:255]):
-        return protected  # 확인한 알파 경계에 흐림을 두 번 적용하지 않는다.
-    # 1024px 캔버스의 초기 보정값. 잘못 선택한 상품 경계 자체를 교정하지는 않는다.
-    return ImageChops.darker(protected, protected.filter(ImageFilter.GaussianBlur(2)))
-
-
-def composite(original_canvas, protected, generated):
-    """출력을 검증하고 과거 마스크 작업만 재합성해 PNG로 반환한다."""
+def generated_png(generated):
+    """모델 출력의 용량·크기·형식을 검증하고 RGB PNG로 반환한다."""
     if len(generated) > 16 * 1024 * 1024:
         raise ValueError("image too large")
     with Image.open(io.BytesIO(generated)) as image:
         if image.size != SIZE or image.format not in {"PNG", "JPEG", "WEBP"}:
             raise ValueError("unexpected image size or format")
         result = image.convert("RGB")
-    if protected is not None:
-        result.paste(original_canvas, (0, 0), feather_mask(protected))
     return png_bytes(result)
 
 
@@ -210,27 +181,18 @@ class ImageAI:
             )
             post = owned_post(con, job["owner_id"], job["post_id"])
         try:
-            original = (cfg.data_dir / "originals" / post["original_file"]).read_bytes()
             parameters = json.loads(job["parameters"])
+            if parameters.get("edit_mode") != "automatic":
+                self._finish_error(job, "unknown", "이전 영역 편집은 종료되었습니다. 기존 요청 상태와 비용을 확인해주세요.")
+                return
+            original = (cfg.data_dir / "originals" / post["original_file"]).read_bytes()
             data_url = lambda raw, mime="image/png": "data:" + mime + ";base64," + base64.b64encode(raw).decode()
-            canvas = protected = None
             payload = {
                 "model": parameters["model"],
                 "images": [{"image_url": data_url(original, "image/jpeg")}],
                 "prompt": job["prompt"], "n": 1, "size": parameters["size"],
                 "quality": parameters["quality"], "output_format": "png", "background": "opaque",
             }
-            if parameters.get("edit_mode") != "automatic":
-                # 업데이트 전에 접수된 마스크 작업의 결과와 처리 의미를 유지한다.
-                canvas, protected = protected_canvas(original, json.loads(job["mask_points"]))
-                if parameters.get("product_mask_png"):
-                    protected = decode_mask(parameters["product_mask_png"])
-                api_mask = Image.new("RGBA", SIZE, (0, 0, 0, 0))
-                api_mask.putalpha(feather_mask(protected))
-                model_canvas = Image.new("RGB", SIZE, "white")
-                model_canvas.paste(canvas, (0, 0), protected.point(lambda value: 255 if value else 0))
-                payload["images"] = [{"image_url": data_url(png_bytes(model_canvas))}]
-                payload["mask"] = {"image_url": data_url(png_bytes(api_mask))}
             response = self.client.post(
                 "https://api.openai.com/v1/images/edits",
                 headers={"Authorization": "Bearer " + cfg.openai_key},
@@ -252,7 +214,7 @@ class ImageAI:
             if not isinstance(encoded, str) or len(encoded) > 24 * 1024 * 1024:
                 raise ValueError("invalid image")
             raw = base64.b64decode(encoded, validate=True)
-            output = composite(canvas, protected, raw)
+            output = generated_png(raw)
             filename = job_id + ".png"
             atomic_write(cfg.data_dir / "generated" / filename, output)
             with connect(cfg, write=True) as con:

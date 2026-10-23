@@ -106,16 +106,22 @@ class Settings:
         )
 
     @property
+    def ai_missing(self):
+        """비밀값을 노출하지 않고 부족한 텍스트 AI 설정 이름만 반환한다."""
+        checks = {
+            "OPENAI_ENABLED=true": self.openai_enabled,
+            "OPENAI_API_KEY": bool(self.openai_key),
+            "OPENAI_MODEL": bool(self.openai_model),
+            "OPENAI_BUDGET_USD > 0": self.ai_budget_usd > 0,
+            "OPENAI_INPUT_CEILING_USD_PER_MILLION > 0": self.input_ceiling_rate > 0,
+            "OPENAI_OUTPUT_USD_PER_MILLION > 0": self.output_rate > 0,
+        }
+        return [name for name, ready in checks.items() if not ready]
+
+    @property
     def ai_ready(self):
-        """AI 호출 설정의 준비 여부 확인"""
-        return bool(
-            self.openai_enabled
-            and self.openai_key
-            and self.openai_model
-            and self.ai_budget_usd > 0
-            and self.input_ceiling_rate > 0
-            and self.output_rate > 0
-        )
+        """텍스트 AI 호출 설정의 준비 여부를 확인한다."""
+        return not self.ai_missing
 
     @property
     def image_ready(self):
