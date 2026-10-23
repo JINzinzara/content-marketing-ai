@@ -23,6 +23,17 @@ def test_csrf_missing_and_invalid(client, new_post):
         )
 
 
+def test_html_errors_provide_popup_and_keep_json_contract(client, new_post):
+    identifier = new_post()
+    url = f"/posts/{identifier}/finalize"
+    response = client.post(url, data={}, headers={"Accept": "text/html"})
+    assert response.status_code == 403
+    assert 'id="server-error"' in response.text
+    assert 'id="notice-dialog"' in response.text and 'aria-describedby="notice-message"' in response.text
+    response = client.post(url, data={}, headers={"Accept": "application/json"})
+    assert response.status_code == 403 and isinstance(response.json()["detail"], str)
+
+
 def test_another_account_cannot_read_or_write(client, settings, new_post):
     identifier = new_post()
     with connect(settings, write=True) as con:

@@ -54,6 +54,19 @@ def test_without_enabled_api_no_external_call(app, client, csrf, new_post):
     )
 
 
+def test_draft_failure_keeps_post_and_shows_warning_once(app, client, new_post, settings, monkeypatch):
+    enable(settings)
+    def failed(*args):
+        raise HTTPException(503, "test failure")
+    monkeypatch.setattr(app.state.ai, "draft", failed)
+    identifier = new_post()
+    html = client.get(f"/posts/{identifier}").text
+    assert 'id="page-warning"' in html and "초안은 저장했지만" in html
+    assert 'id="page-warning"' not in client.get(f"/posts/{identifier}").text
+    with connect(settings) as con:
+        assert owned_post(con, "local-owner", identifier)["source"] != "ai"
+
+
 def test_structured_output_token_preflight_and_usage_record(
     app, client, csrf, new_post, settings
 ):

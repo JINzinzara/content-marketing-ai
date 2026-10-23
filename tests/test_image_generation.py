@@ -1,4 +1,4 @@
-"""모의 이미지 API로 원본 보존·후보 승인·중복 방지·통합 예산·복구 검증"""
+"""모의 이미지 API로 자동 편집·과거 작업 호환·후보 승인·예산·복구 검증"""
 
 import base64
 import io
@@ -9,7 +9,7 @@ from decimal import Decimal
 import httpx
 import pytest
 from fastapi import HTTPException
-from PIL import Image, ImageChops, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw
 
 from app.costs import spent
 from app.credits import finalize
@@ -55,7 +55,6 @@ def image_form(csrf, revision=1):
         "csrf": csrf,
         "confirmed": "yes",
         "revision": revision,
-        "mask_points": json.dumps(POINTS),
     }
 
 
@@ -74,7 +73,7 @@ def test_feather_blends_only_the_inner_edge_and_preserves_product_core():
         assert 0 < edge[0] < 255 and 0 < edge[2] < 255
 
 
-def test_edit_sends_only_selected_product_without_background_or_reference_products(
+def test_automatic_edit_sends_full_original_without_mask_or_reference_products(
     app, client, csrf, new_post, settings
 ):
     identifier = new_post(preset_id="minimal")
@@ -89,11 +88,11 @@ def test_edit_sends_only_selected_product_without_background_or_reference_produc
         payload = json.loads(request.content)
         assert len(payload["images"]) == 1
         assert "상품 하나만" in payload["prompt"] and "휘낭시에" in payload["prompt"]
-        with Image.open(io.BytesIO(base64.b64decode(payload["images"][0]["image_url"].split(",")[1]))) as image:
-            assert image.getpixel((512, 512)) == (32, 80, 120)
-            assert image.getpixel((128, 512)) == (255, 255, 255)
-        with Image.open(io.BytesIO(base64.b64decode(payload["mask"]["image_url"].split(",")[1]))) as mask:
-            assert 0 < mask.getpixel((256, 512))[3] < 255
+        assert "mask" not in payload
+        with connect(settings) as con:
+            post = owned_post(con, "local-owner", identifier)
+        original = (settings.data_dir / "originals" / post["original_file"]).read_bytes()
+        assert base64.b64decode(payload["images"][0]["image_url"].split(",")[1]) == original
         return httpx.Response(200, json=image_body())
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as external:
@@ -103,23 +102,35 @@ def test_edit_sends_only_selected_product_without_background_or_reference_produc
         assert con.execute("SELECT state FROM image_generations").fetchone()[0] == "completed"
 
 
-def test_json_submission_acknowledges_one_job_without_redirect(app, client, csrf, new_post, settings):
+@pytest.mark.parametrize("stale_fields", [{}, {"mask_points": "broken", "mask_png": "invalid", "corrections": "invalid"}])
+def test_json_submission_acknowledges_one_automatic_job_without_redirect(app, client, csrf, new_post, settings, stale_fields):
     identifier = new_post(preset_id="minimal")
     enable_image(settings)
     calls = []
     def handler(request):
         calls.append(request.url.path)
+        assert "mask" not in json.loads(request.content)
         return httpx.Response(200, json=image_body())
     with httpx.Client(transport=httpx.MockTransport(handler)) as external:
         app.state.image_ai.client = external
-        response = client.post(f"/posts/{identifier}/images", data=image_form(csrf), headers={"Accept": "application/json"})
+        response = client.post(f"/posts/{identifier}/images", data={**image_form(csrf), **stale_fields}, headers={"Accept": "application/json"})
     assert response.status_code == 202 and not response.history
     job = client.get(f"/posts/{identifier}/image-progress").json()["job"]
     assert response.json()["job_id"] == job["id"] and job["state"] == "completed"
     assert calls == ["/v1/images/edits"]
 
 
-def test_actual_edit_contract_preserves_product_and_needs_explicit_selection(
+def test_editor_no_longer_requires_region_or_loads_sam(app, client, new_post, csrf, settings):
+    identifier = new_post()
+    html = client.get(f"/posts/{identifier}").text
+    assert 'id="mask-editor"' not in html and 'name="mask_points"' not in html
+    assert 'id="mask-tool"' not in html and not hasattr(app.state, "segmenter")
+    assert client.post(f"/posts/{identifier}/product-mask", data={"csrf": csrf}).status_code == 404
+    with connect(settings) as con:
+        assert con.execute("SELECT COUNT(*) FROM ai_calls").fetchone()[0] == 0
+
+
+def test_automatic_edit_keeps_model_output_and_needs_explicit_selection(
     app, client, csrf, new_post, settings
 ):
     identifier = new_post(preset_id="minimal")
@@ -136,11 +147,7 @@ def test_actual_edit_contract_preserves_product_and_needs_explicit_selection(
             and payload["quality"] == "low"
             and "input_fidelity" not in payload
         )
-        with Image.open(
-            io.BytesIO(base64.b64decode(payload["mask"]["image_url"].split(",")[1]))
-        ) as mask:
-            assert mask.mode == "RGBA" and mask.getpixel((512, 512))[3] == 255
-            assert mask.getpixel((0, 0))[3] == 0
+        assert "mask" not in payload
         calls.append(payload)
         return httpx.Response(200, json=image_body())
 
@@ -158,15 +165,9 @@ def test_actual_edit_contract_preserves_product_and_needs_explicit_selection(
             assert job["state"] == "completed" and post["selected_image_id"] is None
             assert balance(con, "local-owner") == 5
             assert spent(con) == 10800
-        original = (
-            settings.data_dir / "originals" / post["original_file"]
-        ).read_bytes()
-        canvas, protected = protected_canvas(original, POINTS)
+        assert json.loads(job["parameters"])["edit_mode"] == "automatic" and job["mask_points"] == "[]"
         with Image.open(settings.data_dir / "generated" / job["filename"]) as candidate:
-            diff = ImageChops.difference(canvas, candidate).convert("RGB")
-            interior = protected.filter(ImageFilter.MinFilter(17))
-            for channel in diff.split():
-                assert ImageChops.multiply(channel, interior).getbbox() is None
+            assert candidate.getpixel((512, 512)) == (255, 165, 0)
             assert candidate.getpixel((0, 0)) == (255, 165, 0)
         assert (
             client.post(
@@ -234,6 +235,17 @@ def test_disabled_image_api_cannot_call_network(client, csrf, new_post):
         client.post(f"/posts/{identifier}/images", data=image_form(csrf)).status_code
         == 503
     )
+
+
+def test_provider_failure_is_actionable_without_leaking_provider_body(app, client, csrf, new_post, settings):
+    identifier = new_post()
+    enable_image(settings)
+    with httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(500, json={"error": "private provider detail"}))) as external:
+        app.state.image_ai.client = external
+        client.post(f"/posts/{identifier}/images", data=image_form(csrf), headers={"Accept": "application/json"})
+    job = client.get(f"/posts/{identifier}/image-progress").json()["job"]
+    assert job["state"] == "failed" and "500" in job["message"]
+    assert "private provider detail" not in job["message"]
 
 
 def test_simultaneous_clicks_reserve_and_queue_only_once(app, new_post, settings):

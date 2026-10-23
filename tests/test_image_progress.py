@@ -66,3 +66,19 @@ def test_generation_limit_is_visible_and_uses_the_same_rule_as_queue(app, client
     with pytest.raises(HTTPException) as exc:
         app.state.image_ai.queue("local-owner", identifier, 1, [[0, 0], [1, 0], [0, 1]])
     assert exc.value.status_code == 429 and exc.value.detail == "게시물 생성 한도 도달"
+
+
+def test_automatic_estimate_excludes_previous_mask_work(app, client, new_post, settings, monkeypatch):
+    from test_image_generation import enable_image
+    enable_image(settings)
+    now = 2_000_000_000
+    monkeypatch.setattr("app.image_ai.time", SimpleNamespace(time=lambda: now))
+    for points, duration in (([[0, 0], [1, 0], [0, 1]], 400), (None, 50)):
+        identifier = new_post(preset_id="natural")
+        job = app.state.image_ai.queue("local-owner", identifier, 1, points)
+        with connect(settings, write=True) as con:
+            con.execute("UPDATE image_generations SET state='completed', created_at=?, completed_at=? WHERE id=?", (now-duration-10, now-10, job))
+    identifier = new_post(preset_id="natural")
+    app.state.image_ai.queue("local-owner", identifier, 1)
+    job = client.get(f"/posts/{identifier}/image-progress").json()["job"]
+    assert job["expected_seconds"] == 50 and job["sample_count"] == 1
