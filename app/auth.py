@@ -59,7 +59,7 @@ def authorization_url(request):
                 int(time.time()) + 600,
             ),
         )
-    return "https://www.instagram.com/oauth/authorize?" + urlencode(
+    return "https://api.instagram.com/oauth/authorize?" + urlencode(
         {
             "client_id": settings.instagram_app_id,
             "redirect_uri": settings.redirect_url,

@@ -67,7 +67,11 @@ def test_oauth_state_exchange_encrypted_token_and_no_regrant(
     with httpx.Client(transport=httpx.MockTransport(handler)) as external:
         app.state.instagram.client = external
         redirect = client.get("/auth/instagram", follow_redirects=False)
-        query = parse_qs(urlparse(redirect.headers["location"]).query)
+        target = urlparse(redirect.headers["location"])
+        assert (target.scheme, target.netloc, target.path) == (
+            "https", "api.instagram.com", "/oauth/authorize"
+        )
+        query = parse_qs(target.query)
         assert "instagram_business_content_publish" in query["scope"][0]
         assert query["redirect_uri"] == ["https://cafe.example/auth/instagram/callback"]
         assert (
