@@ -20,7 +20,7 @@ from .db import account, balance, connect, owned_post
 from .costs import spent
 from .instagram import caption_text
 from .rendering import UPLOAD_BYTES, atomic_write, normalize_photo, render
-from .image_ai import BUSY_PUBLISH, mask_points
+from .image_ai import BUSY_PUBLISH
 
 router = APIRouter()
 Owner = Annotated[str, Depends(owner)]
@@ -531,14 +531,12 @@ def generate_image(
 ):
     revision = confirmed(form)
     mode = str(form.get("edit_mode", "automatic"))
-    if mode not in {"automatic", "masked"}:
-        raise HTTPException(422, "편집 방식을 확인해주세요")
-    points = mask_points(str(form.get("mask_points", ""))) if mode == "masked" else None
+    if mode != "automatic":
+        raise HTTPException(422, "영역 지정은 종료되었습니다. 새로고침 후 자동 편집을 사용해주세요")
     job = request.app.state.image_ai.queue(
         who,
         post_id,
         revision,
-        points,
     )
     tasks.add_task(request.app.state.image_ai.run, job)
     if "application/json" in request.headers.get("accept", ""):

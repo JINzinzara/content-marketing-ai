@@ -8,7 +8,7 @@
 
 .topbar-status{display:flex;align-items:center;gap:8px}
 
-/* 미리 준비한 스타일 카드와 보존 영역·후보 비교 화면. */
+/* 미리 준비한 스타일 카드와 이미지 후보 비교 화면. */
 .style-options{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;border:0;padding:0;margin:12px 0}
 .style-options legend{font-weight:600;font-size:13px;margin-bottom:12px}
 .stack .style-option,.style-option{border:1px solid var(--line);border-radius:9px;padding:12px;display:grid;gap:7px;cursor:pointer;min-width:0}
@@ -78,7 +78,3 @@ nav a[aria-current]{background:var(--main);color:var(--ink);font-weight:700}nav 
 .notice-dialog h2{font-size:25px;margin:0 0 12px}
 .notice-dialog p{font-size:18px;line-height:1.8;white-space:pre-line;overflow-wrap:anywhere;margin:0 0 24px}
 .notice-actions{display:flex;justify-content:center;gap:12px}.notice-actions .button{min-width:100px;font-size:16px;padding:10px 20px}
-
-#mask-editor{display:block;width:100%;max-width:560px;height:auto;border:1px solid var(--point2);border-radius:8px;cursor:crosshair;touch-action:manipulation}
-#mask-editor:focus-visible{outline:3px solid var(--point1);outline-offset:3px}
-.button-row{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}

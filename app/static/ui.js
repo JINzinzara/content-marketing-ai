@@ -74,16 +74,6 @@ document.addEventListener('submit', event => {
       return;
     }
     confirmedForms.delete(form);
-    if (form.id === 'image-generation' && form.elements.edit_mode.value === 'masked') {
-      let points = [];
-      try { points = JSON.parse(form.elements.mask_points.value); } catch { /* 아래에서 안내한다. */ }
-      if (!Array.isArray(points) || points.length < 3) {
-        event.preventDefault();
-        document.getElementById('image-block').textContent = '상품 경계를 표시하세요';
-        showNotice('상품 윤곽을 따라 점을 세 개 이상 찍어주세요. 점 안쪽은 원본 그대로 유지합니다.').then(() => document.getElementById('mask-editor').focus());
-        return;
-      }
-    }
     if (form.id === 'image-generation' && !form.elements.confirmed.checked) {
       event.preventDefault();
       document.getElementById('image-block').textContent = '생성 동의가 필요해요';
@@ -130,69 +120,6 @@ document.getElementById('photo')?.addEventListener('change', event => {
   document.getElementById('file-message').textContent = file.name;
   photoUrl = URL.createObjectURL(file); image.src = photoUrl; image.hidden = false;
 });
-
-const maskCanvas = document.getElementById('mask-editor');
-if (maskCanvas) {
-  const source = document.getElementById('mask-source');
-  const context = maskCanvas.getContext('2d');
-  const mode = document.getElementById('edit-mode');
-  let points = [], cursor = [.5, .5], keyboard = false;
-  function invalidateApproval() {
-    document.querySelector('#image-generation [name="confirmed"]').checked = false;
-    const hint = document.getElementById('image-block');
-    if (['상품 경계를 표시하세요', '생성 동의가 필요해요'].includes(hint.textContent)) hint.textContent = '';
-  }
-  function drawRegion() {
-    if (!source.complete || !source.naturalWidth) return;
-    context.drawImage(source, 0, 0, maskCanvas.width, maskCanvas.height);
-    if (points.length) {
-      context.beginPath();
-      points.forEach(([x, y], i) => context[i ? 'lineTo' : 'moveTo'](x * maskCanvas.width, y * maskCanvas.height));
-      context.closePath(); context.fillStyle = '#ECB4A455'; context.fill();
-      context.strokeStyle = '#583c44'; context.lineWidth = 3; context.stroke();
-      points.forEach(([x, y]) => {
-        context.beginPath(); context.arc(x * maskCanvas.width, y * maskCanvas.height, 5, 0, Math.PI * 2);
-        context.fillStyle = '#fff'; context.fill(); context.stroke();
-      });
-    }
-    if (keyboard) {
-      context.strokeStyle = '#DA6790'; context.lineWidth = 3;
-      context.strokeRect(cursor[0] * maskCanvas.width - 6, cursor[1] * maskCanvas.height - 6, 12, 12);
-    }
-    document.getElementById('mask-points').value = JSON.stringify(points);
-    document.getElementById('mask-message').textContent = points.length ? `${points.length}/80점 · 안쪽 유지` : '상품 경계를 눌러주세요';
-  }
-  function addPoint(point) {
-    if (points.length >= 80) { showNotice('점은 최대 80개까지 표시할 수 있습니다.'); return; }
-    invalidateApproval(); points.push(point); drawRegion();
-  }
-  function undo() { invalidateApproval(); points.pop(); drawRegion(); }
-  function ready() {
-    maskCanvas.width = Math.min(source.naturalWidth, 960);
-    maskCanvas.height = Math.round(maskCanvas.width * source.naturalHeight / source.naturalWidth);
-    drawRegion();
-  }
-  source.addEventListener('load', ready);
-  if (source.complete && source.naturalWidth) ready();
-  maskCanvas.addEventListener('click', event => {
-    const rect = maskCanvas.getBoundingClientRect(); keyboard = false;
-    addPoint([Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)), Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))]);
-  });
-  maskCanvas.addEventListener('keydown', event => {
-    const move = {ArrowLeft:[-.02,0], ArrowRight:[.02,0], ArrowUp:[0,-.02], ArrowDown:[0,.02]}[event.key];
-    if (move) {
-      event.preventDefault(); keyboard = true;
-      cursor = cursor.map((v, i) => Math.max(0, Math.min(1, v + move[i]))); drawRegion();
-    }
-    if (event.key === 'Enter') { event.preventDefault(); addPoint([...cursor]); }
-    if (event.key === 'Backspace') { event.preventDefault(); undo(); }
-  });
-  document.getElementById('mask-undo').addEventListener('click', undo);
-  document.getElementById('mask-reset').addEventListener('click', () => { invalidateApproval(); points = []; drawRegion(); });
-  mode.addEventListener('change', () => {
-    invalidateApproval(); document.getElementById('region-editor').hidden = mode.value !== 'masked';
-  });
-}
 
 // 본문·해시태그 수정은 로컬 미리보기만 바꾸며 AI를 다시 호출하지 않는다.
 for (const [input, output] of [['caption', 'feed-caption'], ['hashtags', 'feed-hashtags']]) {

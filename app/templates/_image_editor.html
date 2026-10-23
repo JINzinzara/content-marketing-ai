@@ -1,4 +1,4 @@
-<!-- 자동 편집 또는 상품 영역을 지정한 배경 편집 후 승인한 후보만 사용한다. -->
+<!-- 원본 전체를 자동 편집하고 승인한 후보만 사용한다. -->
 <section class="panel stack">
 <h2>게시물 이미지 수정하기</h2>
 <form action="/posts/{{ post.id }}/style" method="post" class="stack">
@@ -10,19 +10,7 @@
 <dl class="style-details">{% for field, label in style_fields.items() %}<div><dt>{{ label }}</dt><dd>{{ current_style.attributes.get(field, '') }} <small>{{ current_style.sources.get(field, '') }}</small></dd></div>{% endfor %}</dl>
 {% for conflict in current_style.conflicts %}<p class="conflict-note">{{ conflict.field }} 고정 기준 유지</p>{% endfor %}</details>{% endif %}
 <form id="image-generation" action="/posts/{{ post.id }}/images" method="post" class="stack" novalidate>
-<label for="edit-mode">이미지 편집 방식</label>
-<select id="edit-mode" name="edit_mode"><option value="automatic">자동 이미지 편집</option><option value="masked">영역 지정 배경 생성</option></select>
-<div id="region-editor" hidden>
-<p class="help-text">상품 윤곽을 순서대로</p>
-<img id="mask-source" src="/posts/{{ post.id }}/original" alt="상품 원본 사진" hidden>
-<canvas id="mask-editor" width="640" height="480" tabindex="0" aria-label="상품 영역 편집" aria-describedby="mask-help"></canvas>
-<p id="mask-help" class="help-text">방향키 이동·Enter 선택</p>
-<div class="button-row"><button id="mask-undo" type="button" class="button secondary">마지막 점 삭제</button><button id="mask-reset" type="button" class="text-button">처음부터</button></div>
-<p id="mask-message" class="help-text" role="status">상품 경계를 눌러주세요</p>
-<p class="help-text">점 안쪽은 원본 유지</p>
-</div>
 <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ post.revision }}">
-<input type="hidden" id="mask-points" name="mask_points" value="[]">
 <label class="check"><input type="checkbox" name="confirmed" value="yes" required><span>생성 1회 동의</span></label>
 <button class="button primary" type="submit" {% if image_block %}disabled{% endif %}>{{ '다른 이미지 생성' if images else '이미지 후보 생성' }}</button>
 <small id="image-attempts" class="muted">생성 {{ images|length }}/{{ image_limit }}회 · 실패 포함</small>

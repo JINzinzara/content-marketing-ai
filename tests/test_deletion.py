@@ -38,7 +38,7 @@ def test_busy_or_foreign_content_cannot_be_deleted(app, client, csrf, new_post, 
     identifier = new_post(preset_id="natural")
     if busy == "image":
         enable_image(settings)
-        app.state.image_ai.queue("local-owner", identifier, 1, [[0, 0], [1, 0], [0, 1]])
+        app.state.image_ai.queue("local-owner", identifier, 1)
     else:
         with connect(settings, write=True) as con:
             if busy == "foreign":
@@ -80,7 +80,7 @@ def test_deleted_reference_is_not_sent_to_ai_and_confirmed_style_survives(app, c
     with connect(settings) as con:
         revision = owned_post(con, "local-owner", post_id)["revision"]
         assert reference_list(con, "local-owner") == []
-    assert app.state.image_ai.queue("local-owner", post_id, revision, [[0, 0], [1, 0], [0, 1]])
+    assert app.state.image_ai.queue("local-owner", post_id, revision)
 
 
 def test_instagram_reference_deletion_preserves_metrics_and_ownership(client, csrf, settings):

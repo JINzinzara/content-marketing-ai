@@ -1,10 +1,9 @@
-"""GPT Image 2 자동·영역 지정 편집과 후보·원가·과거 마스크 작업을 관리한다."""
+"""GPT Image 2 자동 편집·후보·원가와 과거 작업 호환을 관리한다."""
 
 import base64
 import binascii
 import io
 import json
-import math
 import time
 import uuid
 from decimal import ROUND_CEILING
@@ -18,40 +17,10 @@ from .costs import microusd, reserve
 from .db import balance, connect, owned_post
 from .rendering import atomic_write
 from .styles import post_style, reference_data
-from .segmentation import decode_mask, encode_mask
+from .segmentation import decode_mask
 
 SIZE = (1024, 1024)
 BUSY_PUBLISH = {"creating", "container_ready", "publishing", "unknown"}
-
-
-def mask_points(value):
-    """사진 안의 정규화 좌표 검증. 표시 영역만 보존"""
-    try:
-        points = json.loads(value) if isinstance(value, str) else value
-        if not isinstance(points, list) or not 3 <= len(points) <= 80:
-            raise ValueError
-        for point in points:
-            if not isinstance(point, list) or len(point) != 2:
-                raise ValueError
-            if any(
-                type(v) not in (int, float) or not math.isfinite(v) or not 0 <= v <= 1
-                for v in point
-            ):
-                raise ValueError
-        area = abs(
-            sum(
-                points[n][0] * points[(n + 1) % len(points)][1]
-                - points[(n + 1) % len(points)][0] * points[n][1]
-                for n in range(len(points))
-            )
-        )
-        if area == 0:
-            raise ValueError
-        return points
-    except (ValueError, TypeError, KeyError):
-        raise HTTPException(
-            422, "이미지에서 보존하고자 하는 상품의 영역을 세 점 이상 표시해주세요"
-        ) from None
 
 
 def png_bytes(image):
@@ -134,14 +103,9 @@ class ImageAI:
             "sample_count": len(durations),
         }
 
-    def queue(self, owner_id, post_id, revision, points=None, mask_png=""):
-        """소유권·버전·호출 한도·통합 예산을 확인하고 대기 작업 ID를 반환"""
+    def queue(self, owner_id, post_id, revision):
+        """소유권·버전·예산을 확인하고 마스크 없는 자동 편집 작업만 접수한다."""
         cfg = self.settings
-        # 점으로 상품을 지정한 경우에만 내부를 보존하는 배경 편집을 사용한다.
-        if points is not None:
-            points = mask_points(points)
-        if mask_png:
-            mask_png = encode_mask(decode_mask(mask_png))
         with connect(cfg, write=True) as con:
             post = owned_post(con, owner_id, post_id)
             if post["revision"] != revision:
@@ -172,12 +136,6 @@ class ImageAI:
                     for key in ("palette", "lighting", "background", "composition")
                 }}, ensure_ascii=False
             )
-            if points is not None:
-                prompt = (
-                    "지정된 상품 내부는 보존하고 배경만 편집한다. 상품의 위치·크기·형태·색·토핑을 바꾸지 마라. "
-                    "조명·구도 변경은 배경에만 적용하고, 상품 경계에 자연스러운 접촉 그림자를 만든다.\n"
-                    + prompt
-                )
             call_id = reserve(
                 con,
                 cfg,
@@ -192,13 +150,11 @@ class ImageAI:
                 "model": cfg.image_model,
                 "quality": cfg.image_quality,
                 "size": "1024x1024",
-                "edit_mode": "automatic" if points is None else "masked",
+                "edit_mode": "automatic",
                 "text_rate": str(cfg.image_text_rate),
                 "input_rate": str(cfg.image_input_rate),
                 "output_rate": str(cfg.image_output_rate),
             }
-            if mask_png:
-                parameters["product_mask_png"] = mask_png
             con.execute(
                 "INSERT INTO image_generations(id, owner_id, post_id, call_id, state, style_snapshot, mask_points, prompt, parameters, created_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)",
                 (
@@ -207,7 +163,7 @@ class ImageAI:
                     post_id,
                     call_id,
                     post["style_snapshot"],
-                    json.dumps(points or []),
+                    "[]",  # 과거 마스크 기록이 있는 DB 구조는 보존한다.
                     prompt,
                     json.dumps(parameters),
                     int(time.time()),

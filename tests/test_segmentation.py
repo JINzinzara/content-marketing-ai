@@ -47,10 +47,6 @@ def test_legacy_mask_jobs_still_preserve_confirmed_alpha(app, new_post, settings
     settings.image_enabled, settings.openai_key = True, "not-a-real-key"
     settings.ai_budget_usd, settings.image_reserve_usd = Decimal("1"), Decimal("0.1")
     settings.image_text_rate, settings.image_input_rate, settings.image_output_rate = Decimal("5"), Decimal("8"), Decimal("30")
-    with pytest.raises(HTTPException):
-        app.state.image_ai.queue("local-owner", identifier, 1, POINTS, "invalid")
-    with connect(settings) as con:
-        assert con.execute("SELECT COUNT(*) FROM ai_calls").fetchone()[0] == 0
     calls = []
     def handler(request):
         calls.append(request.url.path)
@@ -67,11 +63,12 @@ def test_legacy_mask_jobs_still_preserve_confirmed_alpha(app, new_post, settings
         app.state.image_ai.client = external
         approved = product_mask()
         approved.putpixel((400, 500), edge_alpha)
-        job = app.state.image_ai.queue("local-owner", identifier, 1, POINTS, encode_mask(approved))
+        job = app.state.image_ai.queue("local-owner", identifier, 1)
         with connect(settings, write=True) as con:
             parameters = json.loads(con.execute("SELECT parameters FROM image_generations WHERE id=?", (job,)).fetchone()[0])
             parameters.pop("edit_mode")  # 이전 버전에는 편집 방식 표시가 없다.
-            con.execute("UPDATE image_generations SET parameters=? WHERE id=?", (json.dumps(parameters), job))
+            parameters["product_mask_png"] = encode_mask(approved)
+            con.execute("UPDATE image_generations SET parameters=?, mask_points=? WHERE id=?", (json.dumps(parameters), json.dumps(POINTS), job))
         app.state.image_ai.run(job)
     assert calls == ["/v1/images/edits"]
     with connect(settings) as con:
