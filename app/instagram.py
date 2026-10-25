@@ -90,6 +90,9 @@ class Instagram:
                 "code": code.removesuffix("#_"),
             },
         )
+        items = short.get("data")
+        if isinstance(items, list):
+            short = items[0] if items and isinstance(items[0], dict) else {}
         if not short.get("access_token"):
             raise InstagramError("Instagram 인증 토큰을 받지 못했습니다")
         long = self.request(
