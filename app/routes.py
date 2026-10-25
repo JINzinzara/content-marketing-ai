@@ -90,6 +90,7 @@ def page(request, template, owner_id=None, **context):
                 "ai_ready": settings.ai_ready,
                 "ai_missing": settings.ai_missing,
                 "image_ready": settings.image_ready,
+                "image_missing": settings.image_missing,
                 "instagram_ready": settings.instagram_ready,
             },
             "notice": request.session.pop("notice", ""),
@@ -786,7 +787,7 @@ def sync_instagram(request: Request, who: Owner, form: Form):
     if len(after) > 2000:
         raise HTTPException(422, "조회 커서가 올바르지 않습니다")
     request.session["history_next"] = request.app.state.instagram.sync_history(
-        who, after
+        who, after, restore_deleted=True
     )
     request.session["notice"] = "게시물 가져오기 완료"
     return back("/shop")

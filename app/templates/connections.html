@@ -4,5 +4,16 @@
 {% if shop.ig_username %}<p><strong>@{{ shop.ig_username }}</strong></p>{% endif %}<p>조회·게시·반응 분석</p>
 {% if cfg.instagram_ready %}<a class="button primary" href="/auth/instagram">{{ 'Instagram 재연결' if shop.token else 'Instagram 연결' }}</a>{% else %}<div class="pending-box">계정 연결 준비 중</div>{% endif %}
 {% if shop.token %}<form action="/instagram/disconnect" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="text-button" type="submit">연결 해제</button></form>{% endif %}</section>
-<section class="panel stack"><h2>AI 콘텐츠 제작</h2><div class="section-heading small"><strong>스타일 분석·문구·추천</strong><span class="badge">{{ '호출 설정됨' if cfg.ai_ready else '설정 대기' }}</span></div><div class="section-heading small"><strong>상품 배경 편집</strong><span class="badge">{{ '호출 설정됨' if cfg.image_ready else '설정 대기' }}</span></div><p>텍스트·이미지 통합 예산</p>{% if cfg.local %}<dl class="cost-info"><div><dt>앱 예산</dt><dd>${{ budget }}</dd></div><div><dt>추정 사용액</dt><dd>${{ cost_usd }}</dd></div><div><dt>비용 미확정 요청</dt><dd>{{ pending_calls }}건</dd></div></dl><p class="help-text">실제 청구액과 다를 수 있음</p>{% endif %}</section></div>
+<section class="panel stack"><h2>AI 콘텐츠 제작</h2>
+<div class="section-heading small"><strong>스타일 분석·문구·추천</strong><span class="badge">{{ '호출 설정됨' if cfg.ai_ready else '설정 대기' }}</span></div>
+{% if not cfg.ai_ready %}<button type="button" class="text-button" data-ai-setup="text-setup-message" data-title="텍스트 AI 설정">설정 확인</button>
+<p id="text-setup-message" hidden>Instagram 연결과 OpenAI 설정은 별개입니다. 필요한 설정:
+{% for name in cfg.ai_missing %}{{ name }}
+{% endfor %}.env에 저장한 뒤 앱 서버를 재시작해주세요. 키 값은 공유하지 마세요.</p>{% endif %}
+<div class="section-heading small"><strong>상품 배경 편집</strong><span class="badge">{{ '호출 설정됨' if cfg.image_ready else '설정 대기' }}</span></div>
+{% if not cfg.image_ready %}<button type="button" class="text-button" data-ai-setup="image-setup-message" data-title="이미지 AI 설정">설정 확인</button>
+<p id="image-setup-message" hidden>이미지 편집에 필요한 설정:
+{% for name in cfg.image_missing %}{{ name }}
+{% endfor %}.env에 저장한 뒤 앱 서버를 재시작해주세요. 키 값은 공유하지 마세요.</p>{% endif %}
+<p>텍스트·이미지 통합 예산</p>{% if cfg.local %}<dl class="cost-info"><div><dt>앱 예산</dt><dd>${{ budget }}</dd></div><div><dt>추정 사용액</dt><dd>${{ cost_usd }}</dd></div><div><dt>비용 미확정 요청</dt><dd>{{ pending_calls }}건</dd></div></dl><p class="help-text">실제 청구액과 다를 수 있음</p>{% endif %}</section></div>
 {% endblock %}

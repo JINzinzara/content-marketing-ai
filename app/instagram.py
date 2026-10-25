@@ -185,7 +185,8 @@ class Instagram:
                 )
         return shop["ig_user_id"], token
 
-    def sync_history(self, owner_id, after=""):
+    def sync_history(self, owner_id, after="", *, restore_deleted=False):
+        """게시물을 갱신하고 직접 가져온 경우에만 삭제한 참고자료를 복원한다."""
         ig_id, token = self.connection(owner_id)
         params = {
             "fields": "id,caption,media_type,media_url,thumbnail_url, timestamp, permalink",
@@ -204,7 +205,8 @@ class Instagram:
                     """INSERT INTO history(owner_id, media_id, caption, media_type, media_url, thumbnail_url, published_at, permalink)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(owner_id, media_id) DO UPDATE SET
                     caption=excluded.caption, media_type=excluded.media_type, media_url=excluded.media_url,
-                    thumbnail_url=excluded.thumbnail_url, published_at=COALESCE(excluded.published_at, history.published_at), permalink=excluded.permalink""",
+                    thumbnail_url=excluded.thumbnail_url, published_at=COALESCE(excluded.published_at, history.published_at), permalink=excluded.permalink,
+                    deleted_at=CASE WHEN ? THEN NULL ELSE history.deleted_at END""",
                     (
                         owner_id,
                         str(item["id"]),
@@ -214,6 +216,7 @@ class Instagram:
                         item.get("thumbnail_url"),
                         item.get("timestamp"),
                         item.get("permalink"),
+                        restore_deleted,
                     ),
                 )
                 con.execute(

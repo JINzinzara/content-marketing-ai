@@ -124,20 +124,23 @@ class Settings:
         return not self.ai_missing
 
     @property
+    def image_missing(self):
+        """비밀값 없이 이미지 AI에 부족한 설정 이름만 반환한다."""
+        checks = {
+            "OPENAI_IMAGE_ENABLED=true": self.image_enabled,
+            "OPENAI_API_KEY": bool(self.openai_key),
+            "OPENAI_IMAGE_MODEL=gpt-image-2": self.image_model == "gpt-image-2",
+            "OPENAI_BUDGET_USD > 0": self.ai_budget_usd > 0,
+            "IMAGE_CALL_RESERVE_USD > 0": self.image_reserve_usd > 0,
+            "IMAGE_TEXT_INPUT_USD_PER_MILLION > 0": self.image_text_rate > 0,
+            "IMAGE_INPUT_USD_PER_MILLION > 0": self.image_input_rate > 0,
+            "IMAGE_OUTPUT_USD_PER_MILLION > 0": self.image_output_rate > 0,
+        }
+        return [name for name, ready in checks.items() if not ready]
+
+    @property
     def image_ready(self):
-        return bool(
-            self.image_enabled
-            and self.openai_key
-            and self.image_model == "gpt-image-2"
-            and min(
-                self.ai_budget_usd,
-                self.image_reserve_usd,
-                self.image_text_rate,
-                self.image_input_rate,
-                self.image_output_rate,
-            )
-            > 0
-        )
+        return not self.image_missing
 
     def prepare(self):
         """저장 폴더와 필요한 로컬 키 준비"""

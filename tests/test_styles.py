@@ -358,3 +358,30 @@ def test_disabled_analysis_explains_missing_settings_without_exposing_values(app
     assert settings.ai_ready
     html = client.get("/shop").text
     assert 'id="style-setup-info"' not in html and secret not in html
+
+
+def test_connections_explain_both_ai_settings_without_calling_or_exposing_secrets(client, csrf, settings):
+    from test_generation import enable
+    from test_image_generation import enable_image
+    enable(settings)
+    enable_image(settings)
+    settings.openai_key = "private-key-never-render"
+    settings.input_ceiling_rate = 0
+    settings.image_reserve_usd = 0
+    settings.image_output_rate = 0
+    assert settings.image_missing == ["IMAGE_CALL_RESERVE_USD > 0", "IMAGE_OUTPUT_USD_PER_MILLION > 0"]
+    assert not settings.image_ready
+    html = client.get('/connections').text
+    assert 'data-ai-setup="text-setup-message"' in html
+    assert 'data-ai-setup="image-setup-message"' in html
+    assert "OPENAI_INPUT_CEILING_USD_PER_MILLION" in html
+    assert "IMAGE_CALL_RESERVE_USD" in html and "IMAGE_OUTPUT_USD_PER_MILLION" in html
+    assert settings.openai_key not in html
+    settings.input_ceiling_rate = 5
+    settings.image_reserve_usd = 1
+    settings.image_output_rate = 15
+    assert settings.ai_ready and settings.image_ready
+    html = client.get('/connections').text
+    assert 'data-ai-setup=' not in html and html.count('호출 설정됨') == 2
+    with connect(settings) as con:
+        assert con.execute("SELECT COUNT(*) FROM ai_calls").fetchone()[0] == 0

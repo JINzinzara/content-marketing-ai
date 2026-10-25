@@ -10,6 +10,7 @@ from app.db import balance, connect, ensure_account, owned_post
 from app.styles import FIELDS, reference_list, save_profile
 from test_generation import enable, response_body
 from test_image_generation import enable_image
+from test_instagram import attach
 
 
 def test_deleted_content_is_inaccessible_without_refunding_credits(client, csrf, new_post, settings):
@@ -94,3 +95,60 @@ def test_instagram_reference_deletion_preserves_metrics_and_ownership(client, cs
     with connect(settings) as con:
         assert reference_list(con, "local-owner") == []
         assert con.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 1
+
+
+def test_manual_import_restores_returned_posts_without_duplicates_or_lost_metrics(app, client, csrf, settings):
+    attach(settings)
+    with connect(settings, write=True) as con:
+        ensure_account(con, "other")
+        con.execute("INSERT INTO history(owner_id, media_id, caption, deleted_at) VALUES ('local-owner','mine','기존 문구',1), ('local-owner','older','다음 페이지',1), ('other','mine','다른 계정',1)")
+        con.execute("INSERT INTO observations(owner_id, media_id, observed_at, metrics) VALUES ('local-owner','mine','2026-10-25','{}')")
+    calls = []
+    def handler(request):
+        calls.append(request.url.path)
+        assert request.method == "GET" and request.url.path.endswith("/12345/media")
+        assert request.url.params.get("after", "") == "older-page"
+        return httpx.Response(200, json={"data": [{"id": "mine", "caption": "갱신한 문구", "media_type": "IMAGE"}]})
+    with httpx.Client(transport=httpx.MockTransport(handler)) as external:
+        app.state.instagram.client = external
+        assert client.post('/instagram/sync', data={"csrf": "wrong"}).status_code == 403
+        assert not calls
+        for _ in range(2):
+            response = client.post('/instagram/sync', data={"csrf": csrf, "after": "older-page"})
+            assert response.status_code == 200
+    with connect(settings) as con:
+        items = reference_list(con, "local-owner")
+        assert [(r["id"], r["caption"]) for r in items] == [("ig:mine", "갱신한 문구")]
+        assert con.execute("SELECT COUNT(*) FROM history").fetchone()[0] == 3
+        assert con.execute("SELECT COUNT(*) FROM observations").fetchone()[0] == 1
+        assert con.execute("SELECT deleted_at FROM history WHERE owner_id='other'").fetchone()[0] == 1
+        assert con.execute("SELECT deleted_at FROM history WHERE media_id='older'").fetchone()[0] == 1
+        assert con.execute("SELECT COUNT(*) FROM ai_calls").fetchone()[0] == 0
+
+
+def test_automatic_sync_keeps_deleted_references_hidden(app, client, csrf, settings):
+    attach(settings)
+    with connect(settings, write=True) as con:
+        con.execute("INSERT INTO history(owner_id, media_id, caption, deleted_at) VALUES ('local-owner','mine','기존 문구',1)")
+    def handler(request):
+        assert request.method == "GET" and request.url.path.endswith("/12345/media")
+        return httpx.Response(200, json={"data": [{"id": "mine", "caption": "갱신한 문구"}, {"id": "new", "caption": "새 게시물"}]})
+    with httpx.Client(transport=httpx.MockTransport(handler)) as external:
+        app.state.instagram.client = external
+        app.state.instagram.sync_history("local-owner")
+    with connect(settings) as con:
+        assert [r["id"] for r in reference_list(con, "local-owner")] == ["ig:new"]
+        row = con.execute("SELECT deleted_at, caption FROM history WHERE media_id='mine'").fetchone()
+        assert tuple(row) == (1, "갱신한 문구")
+
+
+def test_failed_import_does_not_restore_deleted_references(app, client, csrf, settings):
+    attach(settings)
+    with connect(settings, write=True) as con:
+        con.execute("INSERT INTO history(owner_id, media_id, deleted_at) VALUES ('local-owner','mine',1)")
+    with httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(403, json={"error": {"code": 10}}))) as external:
+        app.state.instagram.client = external
+        assert client.post('/instagram/sync', data={"csrf": csrf}).status_code == 502
+    with connect(settings) as con:
+        assert reference_list(con, "local-owner") == []
+        assert con.execute("SELECT deleted_at FROM history").fetchone()[0] == 1

@@ -58,9 +58,11 @@ document.getElementById('image-block-info')?.addEventListener('click', () => {
   showNotice(document.getElementById('image-block').textContent, {title:'이미지 생성 안내'});
 });
 
-document.getElementById('style-setup-info')?.addEventListener('click', () => {
-  showNotice(document.getElementById('style-setup-message').textContent, {title:'텍스트 AI 설정'});
-});
+for (const button of document.querySelectorAll('[data-ai-setup]')) {
+  button.addEventListener('click', () => {
+    showNotice(document.getElementById(button.dataset.aiSetup).textContent, {title:button.dataset.title});
+  });
+}
 const styleForm = document.getElementById('style-analysis');
 if (styleForm) {
   const choices = [...document.querySelectorAll('#style-references input[name="reference_id"]')];
