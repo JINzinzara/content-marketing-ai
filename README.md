@@ -18,7 +18,13 @@ cp -n .env.example .env
 브라우저에서 http://127.0.0.1:8765 를 엽니다. 종료는 Control+C입니다.
 단일 프로세스로 실행합니다. 이미지 작업 중 재시작하면 결과 불명으로 남기고 자동 재호출하지 않습니다.
 
-## 테스트
+## Baseline 비교 실험
+
+평가는 서비스 앱과 분리한 `evaluations/`에서 소스 함수를 직접 실행합니다. 웹 화면·메뉴·API 경로·실험용 서비스 DB를 추가하지 않습니다. 공지는 서식 직접 수정과 메뉴·품절 구성 후보를 비교하고, 홍보 문구는 같은 GPT API에서 직접 정보 입력과 저장 정보·스타일 재사용을 비교합니다.
+
+터미널에서 `.venv/bin/python -m evaluations run`으로 자동 검사를 실행하고, `.venv/bin/python -m evaluations report`로 CSV·JSON·Markdown을 만듭니다. 결과는 `evaluations/results/`에 보존합니다. 전체 절차: [평가 운영 문서](docs/evaluation-protocol.md).
+
+## 코드 검증
 
 ```bash
 .venv/bin/python -m pytest -q
