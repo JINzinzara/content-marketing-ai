@@ -1,0 +1,27 @@
+﻿run_id,variant,code_sha256,data_source,id,category,check_type,passed,execution_ms,human_task_ms,model,error,notes
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,rates,G3:MFT,MFT,True,0.3791250055655837,,,,
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,zero-reach,G3:MFT,MFT,True,0.12629199773073196,,,,
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,missing-saved,G3:MFT,MFT,True,0.10900001507252455,,,,
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,missing-reach,G3:MFT,MFT,True,0.10179192759096622,,,,
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,exclude-story,G3:MFT,MFT,True,0.10299996938556433,,,,
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,exclude-lineup-feed,G3:MFT,MFT,True,0.09904091712087393,,,,
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,purpose-groups,G3:MFT,MFT,True,0.11304195504635572,,,,
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,elapsed-window,G3:MFT,MFT,True,0.11258304584771395,,,,
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,paid-excluded,G3:MFT,MFT,True,0.10908290278166533,,,,
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,unknown-promotion,G3:MFT,MFT,True,0.1056670444086194,,,,
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,invalid-negative,G3:MFT,MFT,True,0.09866699110716581,,,,
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,invalid-boolean,G3:MFT,MFT,True,0.11391693260520697,,,,
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,input-order,G3:INV,INV,True,0.23254205007106066,,,,
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,irrelevant-lineup,G3:INV,INV,True,0.33666600938886404,,,,
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,proportional-counts,G3:INV,INV,True,0.2125840401276946,,,,
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,saved-increases,G3:DIR,DIR,True,0.20479108206927776,,,,
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,missing-withdraws,G3:DIR,DIR,True,0.21658395417034626,,,,
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,lineup-story,G1:notice_renderer,,True,11.853958014398813,,,,
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,lineup-feed,G1:notice_renderer,,True,4.358583013527095,,,,
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,soldout-story,G1:notice_renderer,,True,4.82999999076128,,,,
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,product-feed,G1:live_generation,,,,,gpt-5.4,,미실행: 실제 API·사진 입력 및 사람의 과제 수행은 별도 세션 필요
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,event-feed,G1:live_generation,,,,,gpt-5.4,,미실행: 실제 API·사진 입력 및 사람의 과제 수행은 별도 세션 필요
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,shop-feed,G1:live_generation,,,,,gpt-5.4,,미실행: 실제 API·사진 입력 및 사람의 과제 수행은 별도 세션 필요
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,fill-empty,G2:merge_rules,,True,,,,,빈칸 병합 규칙 검사. AI 스타일 추출·사람의 적합성 평가는 미실행
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,keep-existing,G2:merge_rules,,True,,,,,빈칸 병합 규칙 검사. AI 스타일 추출·사람의 적합성 평가는 미실행
+2b70be1b803f4144a0316dbce6f2c21e,service-v1,acf32ba4b42ffb753694beff5b5de67b771d4d85845dd3db4e8c7422221c3d34,synthetic,unknown-remains-empty,G2:merge_rules,,True,,,,,빈칸 병합 규칙 검사. AI 스타일 추출·사람의 적합성 평가는 미실행

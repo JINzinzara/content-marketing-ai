@@ -1,0 +1,23 @@
+{
+  "dataset_version": "checklist-1.0.0",
+  "data_source": "synthetic",
+  "cases": [
+    {"id": "rates", "type": "MFT", "rows": [{"id": "a", "reach": 1000, "saved": 20}, {"id": "b", "reach": 200, "saved": 10}], "expected_rates": {"a": 0.02, "b": 0.05}, "expected_evidence": ["a", "b"]},
+    {"id": "zero-reach", "type": "MFT", "rows": [{"id": "a", "reach": 0, "saved": 0}, {"id": "b", "reach": 100, "saved": 1}], "expected_rates": {"a": null, "b": 0.01}, "expected_evidence": []},
+    {"id": "missing-saved", "type": "MFT", "rows": [{"id": "a", "saved": null, "saved_status": "pending"}, {"id": "b", "saved": 0}], "expected_rates": {"a": null, "b": 0.0}, "expected_evidence": []},
+    {"id": "missing-reach", "type": "MFT", "rows": [{"id": "a", "reach": null}, {"id": "b"}], "expected_rates": {"a": null}, "expected_evidence": []},
+    {"id": "exclude-story", "type": "MFT", "rows": [{"id": "a", "format": "STORY"}, {"id": "b", "format": "STORY"}], "expected_evidence": []},
+    {"id": "exclude-lineup-feed", "type": "MFT", "rows": [{"id": "a", "purpose": "라인업"}, {"id": "b", "purpose": "라인업"}], "expected_evidence": []},
+    {"id": "purpose-groups", "type": "MFT", "rows": [{"id": "a", "purpose": "상품 소개"}, {"id": "b", "purpose": "가게 소개"}], "expected_evidence": []},
+    {"id": "elapsed-window", "type": "MFT", "rows": [{"id": "a", "elapsed": 24}, {"id": "b", "elapsed": 168}], "expected_evidence": []},
+    {"id": "paid-excluded", "type": "MFT", "rows": [{"id": "a"}, {"id": "b", "promotion": "paid"}], "expected_evidence": []},
+    {"id": "unknown-promotion", "type": "MFT", "rows": [{"id": "a", "promotion": "unknown"}, {"id": "b"}], "expected_evidence": []},
+    {"id": "invalid-negative", "type": "MFT", "rows": [{"id": "a", "saved": -1}, {"id": "b"}], "expected_rates": {"a": null}, "expected_evidence": []},
+    {"id": "invalid-boolean", "type": "MFT", "rows": [{"id": "a", "reach": true}, {"id": "b"}], "expected_rates": {"a": null}, "expected_evidence": []},
+    {"id": "input-order", "type": "INV", "rows": [{"id": "a", "saved": 10}, {"id": "b", "saved": 20}], "mutation": "reverse"},
+    {"id": "irrelevant-lineup", "type": "INV", "rows": [{"id": "a", "saved": 10}, {"id": "b", "saved": 20}], "mutation": "add_lineup"},
+    {"id": "proportional-counts", "type": "INV", "rows": [{"id": "a", "reach": 100, "saved": 10}, {"id": "b", "reach": 100, "saved": 20}], "mutation": "scale"},
+    {"id": "saved-increases", "type": "DIR", "rows": [{"id": "a", "reach": 200, "saved": 10}, {"id": "b", "reach": 200, "saved": 5}], "mutation": "increase_saved", "expected_changed_rate": 0.1},
+    {"id": "missing-withdraws", "type": "DIR", "rows": [{"id": "a"}, {"id": "b"}], "mutation": "remove_reach"}
+  ]
+}

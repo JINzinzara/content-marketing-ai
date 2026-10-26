@@ -1,0 +1,16 @@
+{
+  "dataset_version": "tasks-1.0.0",
+  "data_source": "synthetic",
+  "shop": "평가용 카페",
+  "day": "2026-10-26",
+  "menus": {"financier": "휘낭시에", "cannele": "까눌레", "cake": "바스크 치즈케이크", "cookie": "초코 쿠키"},
+  "saved_style": {"palette": "따뜻한 베이지", "lighting": "부드러운 자연광", "background": "목재", "composition": "상품 중앙과 여백", "typography": "", "voice": "존댓말, 이모지 절제"},
+  "tasks": [
+    {"id": "lineup-story", "label": "라인업 스토리", "kind": "notice", "format": "STORY", "purpose": "라인업", "selected": ["financier", "cannele", "cake"], "sold_out": [], "initial_selected": ["financier", "cannele", "cookie"], "template": "평가용 카페\n2026-10-25 오늘의 라인업\n\n휘낭시에\n까눌레\n초코 쿠키"},
+    {"id": "lineup-feed", "label": "라인업 피드", "kind": "notice", "format": "FEED", "purpose": "라인업", "selected": ["financier", "cannele", "cake"], "sold_out": [], "initial_selected": ["financier", "cannele", "cookie"], "template": "평가용 카페\n2026-10-25 오늘의 라인업\n\n휘낭시에\n까눌레\n초코 쿠키"},
+    {"id": "soldout-story", "label": "품절 스토리", "kind": "notice", "format": "STORY", "purpose": "변경 사항", "selected": ["financier", "cannele", "cake"], "sold_out": ["cannele"], "initial_selected": ["financier", "cannele", "cake"], "template": "평가용 카페\n2026-10-26 오늘의 라인업\n\n휘낭시에\n까눌레\n바스크 치즈케이크"},
+    {"id": "product-feed", "label": "상품 소개 피드", "kind": "promotion", "format": "FEED", "purpose": "신메뉴 안내", "facts": {"product_name": "가을 밤 라테", "facts": "밤 크림을 올린 음료", "price": "6500원", "period": "10월 한정", "purpose": "신메뉴 안내"}},
+    {"id": "event-feed", "label": "행사 안내 피드", "kind": "promotion", "format": "FEED", "purpose": "행사 안내", "facts": {"product_name": "휘낭시에 세트", "facts": "휘낭시에 3개 구성", "price": "8000원", "period": "2026년 10월 26일부터 28일까지", "purpose": "행사 안내"}},
+    {"id": "shop-feed", "label": "가게 소개 피드", "kind": "promotion", "format": "FEED", "purpose": "매장 소식", "facts": {"product_name": "평가용 카페", "facts": "매장 내 좌석 이용 가능. 서울 마포구에 위치", "price": "", "period": "", "purpose": "매장 소식"}}
+  ]
+}
