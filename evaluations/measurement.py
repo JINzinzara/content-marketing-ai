@@ -1,4 +1,4 @@
-"""평가 실행에만 계측·대조군 지시문을 적용한다. 서비스 TextAI는 수정하지 않는다."""
+"""평가 실행에만 계측·대조군 지시문 적용. 서비스 TextAI는 수정하지 않음"""
 
 import time
 
@@ -31,6 +31,9 @@ class MeasuredTextAI(TextAI):
 
 
 def fill_blanks(existing, proposed):
-    """자동 스타일 입력 후보의 빈칸 병합 규칙을 평가한다."""
-    return {key: str(existing.get(key) or "").strip() or str(proposed.get(key) or "").strip()
-            for key in FIELDS}
+    """자동 스타일 입력 후보의 빈칸 병합 규칙 평가"""
+    return {
+        key: str(existing.get(key) or "").strip()
+        or str(proposed.get(key) or "").strip()
+        for key in FIELDS
+    }

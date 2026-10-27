@@ -1,4 +1,4 @@
-"""공지 구성 후보의 CLI 평가용 함수. 서비스 서버에 연결하지 않는다."""
+"""공지 구성 후보의 CLI 평가용 함수"""
 
 import io
 from datetime import date
@@ -27,8 +27,14 @@ def render_notice(text, output_format):
         raise HTTPException(422, "공지 형식과 내용을 확인해주세요")
     size = (1080, 1920) if output_format == "STORY" else (1080, 1350)
     image = Image.new("RGB", size, "#fffaf3")
-    draw_text(ImageDraw.Draw(image), text, (90, 190, 900, size[1] - 400),
-              size=52, minimum=30, fill="#2c3027")
+    draw_text(
+        ImageDraw.Draw(image),
+        text,
+        (90, 190, 900, size[1] - 400),
+        size=52,
+        minimum=30,
+        fill="#2c3027",
+    )
     buffer = io.BytesIO()
     image.save(buffer, "JPEG", quality=92)
     return buffer.getvalue()
