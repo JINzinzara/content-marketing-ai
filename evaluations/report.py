@@ -8,8 +8,8 @@ import sys
 
 
 FIELDS = [
-    "case_id", "method", "evaluator", "version", "seconds", "text_edits",
-    "image_edits", "satisfaction", "facts_ok", "style_ok", "product_ok",
+    "case_id", "scenario", "method", "evaluator", "version", "seconds",
+    "satisfaction", "facts_ok", "style_ok", "product_ok",
     "usable", "notes",
 ]
 
@@ -29,13 +29,12 @@ def read_records(path):
                     raise ValueError("과제·평가자·버전을 작성해주세요")
                 if row["method"] not in {"manual", "service"}:
                     raise ValueError("method는 manual 또는 service입니다")
+                if row["scenario"] not in {"first_use", "repeat_use"}:
+                    raise ValueError("scenario는 first_use 또는 repeat_use입니다")
                 row["seconds"] = float(row["seconds"])
                 if not math.isfinite(row["seconds"]) or row["seconds"] <= 0:
                     raise ValueError("seconds는 실제 측정한 양수여야 합니다")
-                for key in ("text_edits", "image_edits", "satisfaction"):
-                    row[key] = int(row[key])
-                if min(row["text_edits"], row["image_edits"]) < 0:
-                    raise ValueError("수정 횟수는 0 이상이어야 합니다")
+                row["satisfaction"] = int(row["satisfaction"])
                 if not 1 <= row["satisfaction"] <= 5:
                     raise ValueError("만족도는 1~5로 작성해주세요")
                 for key in ("facts_ok", "style_ok", "product_ok", "usable"):
@@ -44,7 +43,7 @@ def read_records(path):
                         choices.add("na")
                     if row[key] not in choices:
                         raise ValueError(f"{key}의 판정 값을 확인해주세요")
-                key = (row["case_id"], row["evaluator"], row["method"])
+                key = (row["case_id"], row["scenario"], row["evaluator"], row["method"])
                 if key in seen:
                     raise ValueError("같은 과제·평가자·방식이 중복됐습니다")
                 seen.add(key)
@@ -57,20 +56,21 @@ def read_records(path):
 def compare(records):
     pairs = {}
     for row in records:
-        pairs.setdefault((row["case_id"], row["evaluator"]), {})[row["method"]] = row
+        pairs.setdefault((row["case_id"], row["scenario"], row["evaluator"]), {})[row["method"]] = row
     results = []
-    for (case_id, evaluator), pair in pairs.items():
-        result = {"case_id": case_id, "evaluator": evaluator}
+    for (case_id, scenario, evaluator), pair in pairs.items():
+        result = {"case_id": case_id, "scenario": scenario, "evaluator": evaluator}
         for method in ("manual", "service"):
             row = pair.get(method, {})
-            for key in ("version", "seconds", "text_edits", "image_edits", "satisfaction"):
+            for key in ("version", "seconds", "satisfaction", "style_ok"):
                 result[f"{method}_{key}"] = row.get(key, "")
         status, reduction = "missing_pair", ""
         if len(pair) == 2:
             verdicts = [
                 row[key] for row in pair.values()
-                for key in ("facts_ok", "style_ok", "product_ok", "usable")
+                for key in ("facts_ok", "product_ok", "usable")
             ]
+            # 일관성 차이는 비교 결과이므로 낮은 평가를 이유로 시간 비교에서 빼지 않는다.
             if "no" in verdicts:
                 status = "quality_not_met"
             elif "unreviewed" in verdicts:
@@ -95,9 +95,9 @@ def main():
         rows = compare(read_records(args.csv))
     except (OSError, ValueError) as error:
         parser.error(str(error))
-    fields = ["case_id", "evaluator"] + [
+    fields = ["case_id", "scenario", "evaluator"] + [
         f"{method}_{key}" for method in ("manual", "service")
-        for key in ("version", "seconds", "text_edits", "image_edits", "satisfaction")
+        for key in ("version", "seconds", "satisfaction", "style_ok")
     ] + ["status", "time_reduction_percent"]
     writer = csv.DictWriter(sys.stdout, fieldnames=fields)
     writer.writeheader()

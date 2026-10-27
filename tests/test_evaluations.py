@@ -8,9 +8,9 @@ from evaluations.report import FIELDS, compare, read_records
 
 
 def record(method="manual", **changes):
-    return {"case_id": "test-case", "method": method, "evaluator": "test-evaluator",
-            "version": "test-version", "seconds": "100", "text_edits": "1",
-            "image_edits": "0", "satisfaction": "4", "facts_ok": "yes",
+    return {"case_id": "test-case", "scenario": "first_use", "method": method,
+            "evaluator": "test-evaluator", "version": "test-version", "seconds": "100",
+            "satisfaction": "4", "facts_ok": "yes",
             "style_ok": "yes", "product_ok": "yes", "usable": "yes", "notes": "",
             **changes}
 
@@ -36,8 +36,9 @@ def test_real_record_comparison_and_negative_savings(tmp_path):
 @pytest.mark.parametrize("changes,status", [
     ({"facts_ok": "no"}, "quality_not_met"),
     ({"product_ok": "no"}, "quality_not_met"),
-    ({"style_ok": "unreviewed"}, "awaiting_review"),
+    ({"usable": "unreviewed"}, "awaiting_review"),
     ({"evaluator": "other-evaluator"}, "missing_pair"),
+    ({"scenario": "repeat_use"}, "missing_pair"),
 ])
 def test_failures_and_unmatched_people_are_not_claimed_as_savings(tmp_path, changes, status):
     results = compare(read_records(save(tmp_path, [record(), record("service", **changes)])))
@@ -47,7 +48,7 @@ def test_failures_and_unmatched_people_are_not_claimed_as_savings(tmp_path, chan
 
 @pytest.mark.parametrize("key,value", [
     ("seconds", "nan"), ("seconds", "-1"), ("seconds", "0"),
-    ("text_edits", "-1"), ("image_edits", "1.5"),
+    ("scenario", "unknown"), ("satisfaction", "1.5"),
     ("satisfaction", "6"), ("facts_ok", "maybe"), ("version", ""),
 ])
 def test_invalid_measurements_are_rejected(tmp_path, key, value):
@@ -60,12 +61,35 @@ def test_duplicate_records_are_rejected(tmp_path):
         read_records(save(tmp_path, [record(), record()]))
 
 
+def test_first_and_repeat_use_are_compared_separately(tmp_path):
+    path = save(tmp_path, [
+        record(), record("service", seconds="80"),
+        record(scenario="repeat_use"),
+        record("service", scenario="repeat_use", seconds="40"),
+    ])
+    results = compare(read_records(path))
+    assert [(row["scenario"], row["time_reduction_percent"]) for row in results] == [
+        ("first_use", 20), ("repeat_use", 60),
+    ]
+
+
+@pytest.mark.parametrize("verdict", ["no", "unreviewed"])
+def test_feed_consistency_is_reported_without_hiding_time_comparisons(tmp_path, verdict):
+    path = save(tmp_path, [record(style_ok=verdict), record("service", seconds="125")])
+    result = compare(read_records(path))[0]
+    assert result["status"] == "comparable"
+    assert result["time_reduction_percent"] == -25
+    assert result["manual_style_ok"] == verdict
+    assert result["service_style_ok"] == "yes"
+
+
 def test_empty_csv_has_no_fabricated_results_and_cli_reads_only(tmp_path):
     path = save(tmp_path, [])
     before = path.read_bytes()
     result = subprocess.run([sys.executable, "-m", "evaluations", str(path)],
                             capture_output=True, text=True, check=True)
     assert list(csv.DictReader(result.stdout.splitlines())) == []
+    assert "scenario" in result.stdout and "edits" not in result.stdout
     assert path.read_bytes() == before
     assert list(tmp_path.iterdir()) == [path]
 
