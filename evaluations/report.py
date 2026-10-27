@@ -6,11 +6,19 @@ import math
 from pathlib import Path
 import sys
 
-
 FIELDS = [
-    "case_id", "scenario", "method", "evaluator", "version", "seconds",
-    "satisfaction", "facts_ok", "style_ok", "product_ok",
-    "usable", "notes",
+    "case_id",
+    "scenario",
+    "method",
+    "evaluator",
+    "version",
+    "seconds",
+    "satisfaction",
+    "facts_ok",
+    "style_ok",
+    "product_ok",
+    "usable",
+    "notes",
 ]
 
 
@@ -56,7 +64,9 @@ def read_records(path):
 def compare(records):
     pairs = {}
     for row in records:
-        pairs.setdefault((row["case_id"], row["scenario"], row["evaluator"]), {})[row["method"]] = row
+        pairs.setdefault((row["case_id"], row["scenario"], row["evaluator"]), {})[
+            row["method"]
+        ] = row
     results = []
     for (case_id, scenario, evaluator), pair in pairs.items():
         result = {"case_id": case_id, "scenario": scenario, "evaluator": evaluator}
@@ -67,7 +77,8 @@ def compare(records):
         status, reduction = "missing_pair", ""
         if len(pair) == 2:
             verdicts = [
-                row[key] for row in pair.values()
+                row[key]
+                for row in pair.values()
                 for key in ("facts_ok", "product_ok", "usable")
             ]
             # 일관성 차이는 비교 결과이므로 낮은 평가를 이유로 시간 비교에서 빼지 않는다.
@@ -79,7 +90,9 @@ def compare(records):
                 status = "comparable"
                 reduction = round(
                     (pair["manual"]["seconds"] - pair["service"]["seconds"])
-                    / pair["manual"]["seconds"] * 100, 2
+                    / pair["manual"]["seconds"]
+                    * 100,
+                    2,
                 )
         result.update(status=status, time_reduction_percent=reduction)
         results.append(result)
@@ -88,19 +101,33 @@ def compare(records):
 
 def main():
     parser = argparse.ArgumentParser(description="실제 수작업·앱 사용 기록 비교")
-    parser.add_argument("csv", nargs="?", type=Path,
-                        default=Path(__file__).with_name("records.csv"))
+    parser.add_argument(
+        "csv", nargs="?", type=Path, default=Path(__file__).with_name("records.csv")
+    )
     args = parser.parse_args()
     try:
         rows = compare(read_records(args.csv))
     except (OSError, ValueError) as error:
         parser.error(str(error))
-    fields = ["case_id", "scenario", "evaluator"] + [
-        f"{method}_{key}" for method in ("manual", "service")
-        for key in ("version", "seconds", "satisfaction", "style_ok")
-    ] + ["status", "time_reduction_percent"]
+    fields = (
+        ["case_id", "scenario", "evaluator"]
+        + [
+            f"{method}_{key}"
+            for method in ("manual", "service")
+            for key in ("version", "seconds", "satisfaction", "style_ok")
+        ]
+        + ["status", "time_reduction_percent"]
+    )
     writer = csv.DictWriter(sys.stdout, fieldnames=fields)
     writer.writeheader()
     for row in rows:
-        writer.writerow({key: "'" + value if isinstance(value, str) and value.startswith(("=", "+", "-", "@")) else value
-                         for key, value in row.items()})
+        writer.writerow(
+            {
+                key: (
+                    "'" + value
+                    if isinstance(value, str) and value.startswith(("=", "+", "-", "@"))
+                    else value
+                )
+                for key, value in row.items()
+            }
+        )
