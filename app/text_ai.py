@@ -78,6 +78,49 @@ def validate_draft(draft, facts):
         raise HTTPException(422, "본문 길이를 초과했습니다")
 
 
+def response_payload(model, data, result_type, images=()):
+    """앱과 비교 실행기가 같은 지시·스키마로 요청을 구성한다."""
+    content = [{"type": "input_text", "text": json.dumps(data, ensure_ascii=False)}]
+    content += [
+        {"type": "input_image", "image_url": image, "detail": "low"}
+        for image in images
+    ]
+    return {
+        "model": model,
+        "instructions": INSTRUCTIONS,
+        "input": [{"role": "user", "content": content}],
+        "text": {
+            "format": {
+                "type": "json_schema",
+                "name": result_type.__name__.lower(),
+                "strict": True,
+                "schema": result_type.model_json_schema(),
+            }
+        },
+    }
+
+
+def parse_response(result, result_type):
+    """원시 응답의 완성·거절·출력 구조를 검증한다."""
+    if result.get("status") != "completed":
+        raise HTTPException(502, "AI 응답이 완성되지 않았습니다")
+    texts = []
+    for item in result.get("output", []):
+        for piece in item.get("content", []):
+            if piece.get("type") == "refusal":
+                raise HTTPException(
+                    422, "AI가 해당 요청을 처리하지 않았습니다. 입력을 확인해주세요"
+                )
+            if piece.get("type") == "output_text":
+                texts.append(piece.get("text", ""))
+    try:
+        return result_type.model_validate_json("".join(texts))
+    except ValidationError:
+        raise HTTPException(
+            502, "AI 응답 형식이 올바르지 않아, 기존 내용을 유지했습니다"
+        ) from None
+
+
 class TextAI:
     def __init__(self, settings, client):
         self.settings = settings
@@ -115,24 +158,7 @@ class TextAI:
             raise HTTPException(
                 503, "텍스트 AI 설정이 필요합니다.\n" + "\n".join(cfg.ai_missing)
             )
-        content = [{"type": "input_text", "text": json.dumps(data, ensure_ascii=False)}]
-        content += [
-            {"type": "input_image", "image_url": image, "detail": "low"}
-            for image in images
-        ]
-        base = {
-            "model": cfg.openai_model,
-            "instructions": INSTRUCTIONS,
-            "input": [{"role": "user", "content": content}],
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": result_type.__name__.lower(),
-                    "strict": True,
-                    "schema": result_type.model_json_schema(),
-                }
-            },
-        }
+        base = response_payload(cfg.openai_model, data, result_type, images)
         # 비용 계산에는 이미지와 출력 형태까지 동일한 요청 사용
         with connect(cfg) as con:
             self._check_allowance(con, owner_id, post_id)
@@ -178,23 +204,7 @@ class TextAI:
                         call_id,
                     ),
                 )
-        if result.get("status") != "completed":
-            raise HTTPException(502, "AI 응답이 완성되지 않았습니다")
-        texts = []
-        for item in result.get("output", []):
-            for piece in item.get("content", []):
-                if piece.get("type") == "refusal":
-                    raise HTTPException(
-                        422, "AI가 해당 요청을 처리하지 않았습니다. 입력을 확인해주세요"
-                    )
-                if piece.get("type") == "output_text":
-                    texts.append(piece.get("text", ""))
-        try:
-            return result_type.model_validate_json("".join(texts))
-        except ValidationError:
-            raise HTTPException(
-                502, "AI 응답 형식이 올바르지 않아, 기존 내용을 유지했습니다"
-            ) from None
+        return parse_response(result, result_type)
 
     def _check_allowance(self, con, owner_id, post_id):
         paid = False

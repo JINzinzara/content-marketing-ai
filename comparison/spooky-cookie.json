@@ -1,0 +1,23 @@
+{
+  "price_snapshot_date": "2026-10-28",
+  "price_sources": ["https://developers.openai.com/api/docs/pricing", "https://developers.openai.com/api/docs/models/gpt-5.4-mini", "https://developers.openai.com/api/docs/models/gpt-5.4", "https://developers.openai.com/api/docs/models/gpt-image-1-mini", "https://developers.openai.com/api/docs/models/gpt-image-2"],
+  "shop": "codeit (대구 카페)",
+  "product": {"product_name": "스푸키쿠키", "facts": "상품 종류: 쿠키. 사진의 흰 유령 모양 장식과 짙은 눈·입이 있다. 장식 재료는 미확인.", "period": "10월 26일부터 11월 6일까지 할로윈 한정 판매", "purpose": "할로윈 기간 한정 쿠키 안내"},
+  "caption_style": "제품명으로 시작하는 2~4개 짧은 문단, 부드러운 존댓말. 이모지는 자유. 가게 소개: 대구 카페, 아인슈페너·구움과자 맛집. 미확인 OO동 주소는 사용하지 않는다.",
+  "caption_requirements": "본문은 스푸키쿠키로 시작하고 쿠키 종류·할로윈·10월 26일~11월 6일 한정 판매를 담는다. 미제공 가격·재료·식감·제조 방식을 사실처럼 추가하지 않는다. hashtags에는 #할로윈 #카페 #대구카페 #쿠키와 추가 태그 최대 2개(고유 태그 총 4~6개). 제목으로 본문 요건을 대신하지 않는다. caption에는 태그 묶음을 넣지 않고 hashtags 필드에 분리한다.",
+  "visual_style": {"attributes": {"palette": "짙은 브라운 우드, 베이지, 크림/화이트 중심. 상품 고유 색 보존.", "lighting": "따뜻하고 부드러운 자연광 또는 은은한 실내 광원, 차분한 명암.", "background": "정돈된 우드 테이블, 아이보리 벽, 크림색 식기, 패브릭, 트레이 중 어울리는 요소. 추가 음식 없음.", "composition": "음식을 가까이 담거나 테이블 위 정물처럼 정돈. 상단 또는 사선 구도, 중앙 또는 약간 비대칭 배치와 여백. 상품은 하나만. 글자 삽입 없음.", "typography": "X", "tone": "부드러운 존댓말"}},
+  "main_product": "이번 입력의 보존 대상은 큰 원형 스탠드 앞줄 오른쪽, 화면 중앙에 가까운 메인 쿠키 한 개다. 가장 아래쪽 쿠키나 작은 오른쪽 스탠드 쿠키로 바꾸지 않는다. 갈색 둥근 쿠키 표면, 흰 유령 장식, 짙은 눈·입 배치와 비율, 쿠키와 장식의 붙은 구조를 유지한다. 다른 쿠키는 모두 제거한다. 최종 세로 4:5 중앙 크롭에서 상품과 장식이 잘리지 않도록 여백을 확보한다.",
+  "cases": [
+    {"id": "original", "file": "inputs/cafenew3-original.jpg", "provenance": "actual_original"},
+    {"id": "angle-higher", "file": "inputs/cafenew3-angle-higher.png", "provenance": "synthetic_capture_condition"},
+    {"id": "angle-left", "file": "inputs/cafenew3-angle-left.png", "provenance": "synthetic_capture_condition"},
+    {"id": "light-bright-cool", "file": "inputs/cafenew3-light-bright-cool.png", "provenance": "synthetic_capture_condition"},
+    {"id": "light-dim-warm", "file": "inputs/cafenew3-light-dim-warm.png", "provenance": "synthetic_capture_condition"}
+  ],
+  "models": {
+    "gpt-5.4-mini": {"max_output_tokens": 2048, "reasoning_effort": "none", "rates_per_million_usd": {"input": "0.75", "cached_input": "0.075", "output": "4.50"}},
+    "gpt-5.4": {"max_output_tokens": 2048, "reasoning_effort": "none", "rates_per_million_usd": {"input": "2.50", "cached_input": "0.25", "output": "15.00"}},
+    "gpt-image-1-mini": {"quality": "low", "size": "1024x1024", "reserve_usd": "0.10", "rates_per_million_usd": {"text_input": "2.00", "image_input": "2.50", "output": "8.00"}},
+    "gpt-image-2": {"quality": "low", "size": "1024x1024", "reserve_usd": "0.10", "rates_per_million_usd": {"text_input": "2.50", "image_input": "4.00", "output": "15.00"}}
+  }
+}

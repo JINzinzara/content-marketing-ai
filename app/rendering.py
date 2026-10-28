@@ -141,6 +141,12 @@ def draw_text(draw, text, box, *, size, fill, minimum=24):
     raise HTTPException(422, "제목이나 가격 표기의 글자 수를 줄여주세요")
 
 
+def fit_photo(raw, aspect):
+    """앱과 비교 미리보기에서 동일하게 비율을 맞춘다."""
+    with Image.open(io.BytesIO(raw)) as src:
+        return ImageOps.fit(src.convert("RGB"), ASPECTS[aspect], Image.Resampling.LANCZOS)
+
+
 def render(settings, post, shop_name, *, preview=False):
     """원본 또는 승인한 후보를 비율에 맞춰 채우고 JPEG bytes로 반환"""
     width, height = ASPECTS[post["aspect"]]
@@ -154,8 +160,7 @@ def render(settings, post, shop_name, *, preview=False):
         if not candidate or candidate["style_snapshot"] != post["style_snapshot"]:
             raise HTTPException(409, "현재 스타일에 맞는 이미지를 다시 선택해주세요")
         photo = settings.data_dir / "generated" / candidate["filename"]
-    with Image.open(photo) as src:
-        image = ImageOps.fit(src.convert("RGB"), (width, height), Image.Resampling.LANCZOS)
+    image = fit_photo(photo.read_bytes(), post["aspect"])
     if post.get("show_price") and post["price"]:
         draw_text(ImageDraw.Draw(image), post["price"],
                   (56, height - 145, width - 112, 85), size=42, fill=post["color"])

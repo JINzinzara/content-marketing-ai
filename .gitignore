@@ -223,3 +223,7 @@ data/
 /models/
 .DS_Store
 /assets/
+
+# 모델 비교의 비공개 사진·요청·생성물·사람 판정
+/comparison/inputs/
+/comparison/runs/
