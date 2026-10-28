@@ -133,3 +133,9 @@ def test_draft_uses_owned_caption_examples_and_new_product_photo(app, client, cs
             con.execute("UPDATE posts SET style_snapshot=? WHERE id=?", (json.dumps(style), identifier))
         assert client.post(f"/posts/{identifier}/generate", data={"csrf": csrf}).status_code == 404
     assert calls == ["/v1/responses/input_tokens", "/v1/responses"]
+
+
+def test_app_has_no_experiment_routes_or_menu(client):
+    assert client.get("/experiments").status_code == 404
+    response = client.get("/")
+    assert response.status_code == 200 and "실험 기록" not in response.text
