@@ -62,7 +62,9 @@ def fill_reviews(out, grade="충족"):
     with (out / "reviews.csv").open(encoding="utf-8-sig", newline="") as stream:
         rows = list(csv.DictReader(stream))
     for row in rows:
-        row.update(grade=grade, reason="사람이 항목을 확인함", evaluator="테스터")
+        row.update({c: grade for c in mc.CRITERIA[row["kind"]]})
+        row["reason"] = "사람이 항목을 확인함"
+    (out / "evaluator.txt").write_text("테스터\n")
     mc.write_csv(out / "reviews.csv", rows, tuple(rows[0]))
     return rows
 
@@ -114,9 +116,14 @@ def test_full_mock_run_keeps_raw_preview_usage_and_never_repeats(experiment):
         assert con.execute("SELECT COUNT(*) FROM credits").fetchone()[0] == 0
     assert all(r["passed"] == 0 and r["unreviewed"] == 5 for r in mc.report(out))
     rows = fill_reviews(out)
-    rows[0]["grade"] = "부분 충족"
+    rows[0][next(iter(mc.CRITERIA[rows[0]["kind"]]))] = "부분 충족"
     mc.write_csv(out / "reviews.csv", rows, tuple(rows[0]))
     assert sum(r["passed"] for r in mc.report(out)) == 19
+    rows[1][next(iter(mc.CRITERIA[rows[1]["kind"]]))] = ""
+    mc.write_csv(out / "reviews.csv", rows, tuple(rows[0]))
+    summary = mc.report(out)
+    assert sum(r["passed"] for r in summary) == 18
+    assert sum(r["unreviewed"] for r in summary) == 1
     page = (out / "review.html").read_text()
     assert all(model not in page for model in mc.MODELS)
     assert cfg.openai_key not in "".join(p.read_text() for p in out.rglob("*.json"))
@@ -216,6 +223,119 @@ def test_missing_human_rows_or_reason_cannot_become_pass(experiment):
     rows[0]["reason"] = "확인"
     mc.write_csv(out / "reviews.csv", rows, tuple(rows[0]))
     with pytest.raises(ValueError, match="누락"):
+        mc.report(out)
+
+
+def test_review_sheet_has_one_row_per_output_and_one_shared_evaluator(experiment):
+    out, manifest, _, _ = experiment
+    with (out / "reviews.csv").open(encoding="utf-8-sig", newline="") as stream:
+        reader = csv.DictReader(stream)
+        rows = list(reader)
+        assert tuple(reader.fieldnames) == mc.REVIEW_FIELDS
+    assert len(rows) == 20
+    assert {r["sample_id"] for r in rows} == {s["id"] for s in manifest["samples"]}
+    assert sum(len(mc.CRITERIA[r["kind"]]) for r in rows) == 130
+    assert (out / "evaluator.txt").read_text().strip() == "본인"
+    fill_reviews(out)
+    for name, field, value in (("bundles.csv", "grade", "충족"),
+                               ("preferences.csv", "preference", "비슷함")):
+        with (out / name).open(encoding="utf-8-sig", newline="") as stream:
+            rows = list(csv.DictReader(stream))
+        assert all("evaluator" not in r for r in rows)
+        for row in rows:
+            row.update({field: value, "reason": "사람이 비교함"})
+        mc.write_csv(out / name, rows, tuple(rows[0]))
+    mc.report(out)
+    results = mc.read_json(out / "results.json")
+    assert results["evaluator"] == "테스터"
+    for key in ("human_reviews", "human_bundles", "human_preferences"):
+        assert {r["evaluator"] for r in results[key]} == {"테스터"}
+    (out / "evaluator.txt").write_text("\n")
+    with pytest.raises(ValueError, match="evaluator.txt"):
+        mc.report(out)
+
+
+def legacy_sheets(out, manifest):
+    rows = [{"sample_id": s["id"], "kind": s["kind"], "group": s["group"], "case": s["case"],
+             "criterion": c, "grade": "충족", "reason": c + ': "확인, 완료"\n문제 없음', "evaluator": "테스터"}
+            for s in manifest["samples"] for c in mc.CRITERIA[s["kind"]]]
+    rows[0]["grade"] = "부분 충족"
+    next(r for r in rows if r["sample_id"] == manifest["samples"][1]["id"])["grade"] = ""
+    mc.write_csv(out / "reviews.csv", rows, tuple(rows[0]))
+    for name in ("bundles.csv", "preferences.csv"):
+        with (out / name).open(encoding="utf-8-sig", newline="") as stream:
+            old = list(csv.DictReader(stream))
+        for row in old:
+            row["evaluator"] = "테스터"
+        field, value = ("grade", "충족") if name == "bundles.csv" else ("preference", "A 우세")
+        old[0].update({field: value, "reason": "묶음 확인"})
+        mc.write_csv(out / name, old, tuple(old[0]))
+    (out / "evaluator.txt").unlink()
+    return rows
+
+
+def test_legacy_conversion_preserves_grades_reasons_backups_and_verdicts(experiment, monkeypatch):
+    out, manifest, _, _ = experiment
+    rows = legacy_sheets(out, manifest)
+    originals = {p.name: p.read_bytes() for p in out.glob("*.csv") if p.name != "summary.csv"}
+    frozen = {p: (out / p).read_bytes() for p in manifest["files_sha256"]}
+    for sample in manifest["samples"]:
+        path = mc.record_path(out, sample)
+        path.parent.mkdir()
+        mc.save_json(path, {"state": "completed", "cost_microusd": 100,
+                           "api_seconds": 1, "request_started_at": 1})
+    monkeypatch.setattr(httpx, "Client", lambda *a, **kw: pytest.fail("report must stay offline"))
+    summary = mc.report(out)
+    assert sum(r["passed"] for r in summary) == 18
+    assert sum(r["unreviewed"] for r in summary) == 1
+    migrated = {r["sample_id"]: r for r in mc.read_json(out / "results.json")["human_reviews"]}
+    assert len(migrated) == 20
+    for old in rows:
+        assert migrated[old["sample_id"]][old["criterion"]] == old["grade"]
+        assert old["reason"] in migrated[old["sample_id"]]["reason"]
+    for name, raw in originals.items():
+        assert (out / name.replace(".csv", ".legacy.csv")).read_bytes() == raw
+    assert all((out / p).read_bytes() == raw for p, raw in frozen.items())
+    results = mc.read_json(out / "results.json")
+    assert results["human_bundles"][0]["grade"] == "충족"
+    assert results["human_preferences"][0]["preference"] == "A 우세"
+    assert results["evaluator"] == "테스터"
+    after = (out / "reviews.csv").read_bytes()
+    assert mc.report(out) == summary
+    assert (out / "reviews.csv").read_bytes() == after
+    for name, raw in originals.items():
+        assert (out / name.replace(".csv", ".legacy.csv")).read_bytes() == raw
+
+
+def test_legacy_conversion_does_not_merge_different_evaluators(experiment):
+    out, manifest, _, _ = experiment
+    rows = legacy_sheets(out, manifest)
+    rows[0]["evaluator"] = "다른 사람"
+    mc.write_csv(out / "reviews.csv", rows, tuple(rows[0]))
+    before = (out / "reviews.csv").read_bytes()
+    with pytest.raises(ValueError, match="평가자가"):
+        mc.report(out)
+    assert (out / "reviews.csv").read_bytes() == before
+    assert not (out / "reviews.legacy.csv").exists()
+
+
+@pytest.mark.parametrize("problem", ["wrong_kind", "missing_column", "duplicate", "bad_grade", "metadata"])
+def test_result_rows_reject_invalid_or_mismatched_reviews(experiment, problem):
+    out, _, _, _ = experiment
+    rows = fill_reviews(out)
+    if problem == "wrong_kind":
+        rows[0]["H01" if rows[0]["kind"] == "text" else "T01"] = "충족"
+    elif problem == "missing_column":
+        for row in rows:
+            del row["T01"]
+    elif problem == "duplicate":
+        rows[1]["sample_id"] = rows[0]["sample_id"]
+    elif problem == "bad_grade":
+        rows[0][next(iter(mc.CRITERIA[rows[0]["kind"]]))] = "합격"
+    else:
+        rows[0]["group"] = "다른 그룹"
+    mc.write_csv(out / "reviews.csv", rows, tuple(rows[0]))
+    with pytest.raises(ValueError):
         mc.report(out)
 
 

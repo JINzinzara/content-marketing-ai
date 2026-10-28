@@ -65,6 +65,18 @@ def validated(model, form):
         ) from None
 
 
+def save_draft(settings, owner_id, post, result):
+    """생성 중 수정·삭제·게시된 내용을 덮어쓰지 않고 새 버전으로 저장한다."""
+    with connect(settings, write=True) as con:
+        current = owned_post(con, owner_id, post["id"])
+        if current["revision"] != post["revision"] or current["publish_state"] in BUSY_PUBLISH:
+            raise HTTPException(409, "생성 중 내용이 변경되어 변경이 반영되지 않았습니다")
+        con.execute(
+            "UPDATE posts SET title=?, caption=?, hashtags=?, layout='split', source='ai', revision=revision+1 WHERE id=?",
+            (result.title, result.caption, result.hashtags, post["id"]),
+        )
+
+
 def page(request, template, owner_id=None, **context):
     settings = request.app.state.settings
     shop = account(settings, owner_id) if owner_id else None
@@ -431,22 +443,10 @@ def create_post(request: Request, who: Owner, form: Form):
             post = owned_post(con, who, post_id)
         try:
             result = request.app.state.ai.draft(who, post_id, shop, post)
-            with connect(cfg, write=True) as con:
-                con.execute(
-                    "UPDATE posts SET title=?, caption=?, hashtags=?, layout=?, source='ai' WHERE id=?",
-                    (
-                        result.title,
-                        result.caption,
-                        result.hashtags,
-                        "split",
-                        post_id,
-                    ),
-                )
-        except HTTPException:
-            request.session["notice"] = (
-                "초안 저장·AI 연결 확인"
-            )
-            request.session["warning"] = "초안은 저장했지만 AI 문구를 만들지 못했습니다. 연결 상태와 예산을 확인해주세요."
+            save_draft(cfg, who, post, result)
+        except HTTPException as exc:
+            request.session["notice"] = "수정 내용 유지" if exc.status_code in {404, 409} else "초안 저장·AI 연결 확인"
+            request.session["warning"] = exc.detail if exc.status_code in {404, 409} else "초안은 저장했지만 AI 문구를 만들지 못했습니다. 연결 상태와 예산을 확인해주세요."
     return back("/posts/" + post_id)
 
 
@@ -672,21 +672,7 @@ def regenerate(request: Request, post_id: str, who: Owner, form: Form):
     }:
         raise HTTPException(409, "게시 처리 중에는 문구를 다시 생성할 수 없습니다")
     result = request.app.state.ai.draft(who, post_id, account(cfg, who), post)
-    with connect(cfg, write=True) as con:
-        current = owned_post(con, who, post_id)
-        if current["revision"] != post["revision"] or current["publish_state"] in {
-            "creating",
-            "container_ready",
-            "publishing",
-            "unknown",
-        }:
-            raise HTTPException(
-                409, "생성 중 내용이 변경되어 변경이 반영되지 않았습니다"
-            )
-        con.execute(
-            "UPDATE posts SET title=?, caption=?, hashtags=?, layout=?, source='ai', revision=revision+1 WHERE id=?",
-            (result.title, result.caption, result.hashtags, "split", post_id),
-        )
+    save_draft(cfg, who, post, result)
     return back("/posts/" + post_id)
 
 

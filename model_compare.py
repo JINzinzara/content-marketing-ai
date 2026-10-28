@@ -22,7 +22,7 @@ import httpx
 from fastapi import HTTPException
 
 from app.config import ROOT, Settings
-from app.costs import microusd, reserve
+from app.costs import microusd, reconcile, reserve, spent
 from app.db import connect, initialize
 from app.image_ai import edit_payload, edit_prompt, generated_png
 from app.rendering import atomic_write, fit_photo, normalize_photo
@@ -39,6 +39,7 @@ CRITERIA = {
               "H03": "경계·그림자·접촉면 자연스러움", "H04": "1080×1350·잘림/새 글자 없음"},
 }
 GRADES = {"", "충족", "부분 충족", "미충족"}
+REVIEW_FIELDS = ("sample_id", "kind", "group", "case", *CRITERIA["text"], *CRITERIA["image"], "reason")
 SOURCE_FILES = ("model_compare.py", "app/text_ai.py", "app/image_ai.py", "app/rendering.py",
                 "app/costs.py", "app/config.py", "app/db.py", "app/schema.sql", "app/styles.py",
                 "docs/evaluation-protocol.md", "pyproject.toml")
@@ -104,6 +105,11 @@ def write_csv(path, rows, fields):
     writer.writeheader()
     writer.writerows(rows)
     atomic_write(path, out.getvalue().encode("utf-8-sig"))
+
+
+def review_template(samples):
+    return [{**dict.fromkeys(REVIEW_FIELDS, ""), "sample_id": s["id"],
+             "kind": s["kind"], "group": s["group"], "case": s["case"]} for s in samples]
 
 
 def source_hashes(root=ROOT):
@@ -190,16 +196,14 @@ def prepare(config_path, out, phase="final", model=None, case=None):
                 "source_sha256": digest(raw), "provenance": c["provenance"]})
     save_json(out / "manifest.json", manifest)
     atomic_write(out / "manifest.sha256", (digest((out / "manifest.json").read_bytes()) + "\n").encode())
-    review_rows = [{"sample_id": s["id"], "kind": s["kind"], "group": s["group"], "case": s["case"],
-                    "criterion": key, "grade": "", "reason": "", "evaluator": ""}
-                   for s in manifest["samples"] for key in CRITERIA[s["kind"]]]
-    write_csv(out / "reviews.csv", review_rows, ("sample_id", "kind", "group", "case", "criterion", "grade", "reason", "evaluator"))
-    bundle_rows = [{"kind": k, "group": g, "grade": "", "reason": "", "evaluator": ""}
+    write_csv(out / "reviews.csv", review_template(manifest["samples"]), REVIEW_FIELDS)
+    atomic_write(out / "evaluator.txt", "본인\n".encode())
+    bundle_rows = [{"kind": k, "group": g, "grade": "", "reason": ""}
                    for k, g in sorted({(s["kind"], s["group"]) for s in manifest["samples"]})]
-    write_csv(out / "bundles.csv", bundle_rows, ("kind", "group", "grade", "reason", "evaluator"))
-    write_csv(out / "preferences.csv", [{"kind": k, "preference": "", "reason": "", "evaluator": ""}
+    write_csv(out / "bundles.csv", bundle_rows, ("kind", "group", "grade", "reason"))
+    write_csv(out / "preferences.csv", [{"kind": k, "preference": "", "reason": ""}
               for k in sorted({s["kind"] for s in manifest["samples"]})
-              if len({s["group"] for s in manifest["samples"] if s["kind"] == k}) == 2], ("kind", "preference", "reason", "evaluator"))
+              if len({s["group"] for s in manifest["samples"] if s["kind"] == k}) == 2], ("kind", "preference", "reason"))
     report(out)
     return manifest
 
@@ -378,44 +382,136 @@ def settle(out, sample_id, amount, note, settings):
                   reconciliation_note=note, reconciled_at=time.time())
     if reconciled > record.get("reserved_microusd", 0):
         record["overrun_acknowledged"] = True
-    ledger_update(settings, record)
-    if record.get("overrun_acknowledged"):
+    if record.get("call_id"):
+        initialize(settings)
         with connect(settings, write=True) as con:
-            con.execute("UPDATE ai_calls SET reserved_microusd=MAX(reserved_microusd, ?) WHERE id=?",
-                        (reconciled, record["call_id"]))
+            reconcile(con, record["call_id"], reconciled, note)
+            con.execute("UPDATE ai_calls SET state=? WHERE id=?", (record["state"], record["call_id"]))
     save_json(path, record)
     report(out)
 
 
-def reviewed_rows(path, keys, expected, allowed=GRADES, value_column="grade"):
+def budget(settings):
+    """비밀값 없이 누적 예산과 확인이 필요한 요청 ID를 출력한다."""
+    total = 0
+    rows = []
+    if (settings.data_dir / "app.sqlite3").exists():
+        with connect(settings) as con:
+            total = spent(con)
+            rows = con.execute(
+                "SELECT id, purpose, model, state, reserved_microusd, cost_microusd FROM ai_calls WHERE cost_microusd IS NULL OR cost_microusd > reserved_microusd ORDER BY created_at, id"
+            ).fetchall()
+    print(f"누적 예산 ${dollars(settings.ai_budget_usd)} · 사용량 추정+미확정 예약 ${Decimal(total) / 1_000_000:.6f}")
+    for row in rows:
+        cost = "미확정" if row["cost_microusd"] is None else str(Decimal(row["cost_microusd"]) / 1_000_000)
+        print(f'{row["id"]} | {row["purpose"]} | {row["model"]} | {row["state"]} | 예약 ${Decimal(row["reserved_microusd"]) / 1_000_000} | 비용 {cost}')
+    if not rows:
+        print("비용 미확정·예약 초과 요청 없음")
+
+
+def settle_app_call(settings, call_id, amount, note):
+    if not (settings.data_dir / "app.sqlite3").exists():
+        raise ValueError("기존 앱의 예산 원장이 없습니다")
+    initialize(settings)
+    with connect(settings, write=True) as con:
+        call = con.execute("SELECT purpose FROM ai_calls WHERE id=?", (call_id,)).fetchone()
+        if call and call["purpose"].startswith("compare:"):
+            raise ValueError("모델 비교 요청은 settle <실행 폴더> --sample로 정산하세요")
+        reconcile(con, call_id, microusd(dollars(amount)), note)
+
+
+def reviewed_rows(path, keys, expected, allowed=GRADES, value_column="grade", evaluator="", criteria=None):
     with path.open(encoding="utf-8-sig", newline="") as stream:
-        rows = list(csv.DictReader(stream))
+        reader = csv.DictReader(stream)
+        columns = set(REVIEW_FIELDS[4:-1]) if criteria else {value_column}
+        required = set(REVIEW_FIELDS) if criteria else set(keys) | columns | {"reason"}
+        if not required.issubset(reader.fieldnames or ()):
+            raise ValueError("사람 판정 열이 누락됐습니다: " + path.name)
+        if len(reader.fieldnames) != len(set(reader.fieldnames)):
+            raise ValueError("사람 판정 열 이름이 중복됐습니다: " + path.name)
+        rows = list(reader)
     result = {}
     for row in rows:
+        if None in row or any(value is None for value in row.values()):
+            raise ValueError("CSV의 열 개수가 맞지 않습니다: " + path.name)
         key = tuple(row[k] for k in keys)
         if key in result or key not in expected:
             raise ValueError("사람 판정 ID가 중복되거나 잘못됐습니다: " + str(key))
-        grade = row[value_column].strip()
-        if grade not in allowed:
-            raise ValueError("판정 값이 잘못됐습니다: " + grade)
-        if grade and (not row["reason"].strip() or not row["evaluator"].strip()):
+        selected = criteria[key] if criteria else (value_column,)
+        if criteria and any(row[c].strip() for c in columns - set(selected)):
+            raise ValueError("다른 영역의 판정 칸은 비워 두세요: " + str(key))
+        for column in selected:
+            row[column] = row[column].strip()
+            if row[column] not in allowed:
+                raise ValueError("판정 값이 잘못됐습니다: " + row[column])
+        row["evaluator"] = row.get("evaluator", "").strip() or evaluator
+        if any(row[c] for c in selected) and (not row["reason"].strip() or not row["evaluator"]):
             raise ValueError("판정에는 이유와 사람 평가자 이름이 필요합니다")
-        row[value_column] = grade
         result[key] = row
     if set(result) != expected:
         raise ValueError("사람 판정 행이 누락됐습니다")
     return result
 
 
+def migrate_review_sheet(out, samples):
+    """기존 판정·이유를 보존하고 결과당 한 행으로 옮긴다. 유료 호출은 하지 않는다."""
+    with (out / "reviews.csv").open(encoding="utf-8-sig", newline="") as stream:
+        if "criterion" not in (csv.DictReader(stream).fieldnames or ()):
+            return
+    sheets = {}
+    for name in ("reviews.csv", "bundles.csv", "preferences.csv"):
+        with (out / name).open(encoding="utf-8-sig", newline="") as stream:
+            sheets[name] = list(csv.DictReader(stream))
+    names = {(row.get("evaluator") or "").strip() for rows in sheets.values() for row in rows} - {""}
+    evaluator_path = out / "evaluator.txt"
+    evaluator = evaluator_path.read_text().strip() if evaluator_path.exists() else next(iter(names), "본인")
+    if not evaluator or names - {evaluator}:
+        raise ValueError("평가자가 여러 명이거나 공통 평가자와 다릅니다. 기존 기록을 유지합니다")
+    legacy = reviewed_rows(out / "reviews.csv", ("sample_id", "criterion"),
+                           {(s["id"], c) for s in samples for c in CRITERIA[s["kind"]]}, evaluator=evaluator)
+    reviewed_rows(out / "bundles.csv", ("kind", "group"),
+                  {(s["kind"], s["group"]) for s in samples}, evaluator=evaluator)
+    reviewed_rows(out / "preferences.csv", ("kind",),
+                  {(k,) for k in {s["kind"] for s in samples}
+                   if len({s["group"] for s in samples if s["kind"] == k}) == 2},
+                  {"", "A 우세", "비슷함", "B 우세"}, "preference", evaluator=evaluator)
+    reviews = review_template(samples)
+    for row, sample in zip(reviews, samples):
+        reasons = []
+        for c in CRITERIA[sample["kind"]]:
+            old = legacy[(sample["id"], c)]
+            row[c] = old["grade"]
+            if old["reason"].strip():
+                reasons.append(c + ": " + old["reason"].strip())
+        row["reason"] = "\n".join(reasons)
+    # 먼저 원본 세 파일을 보관하고, 재실행 시 덮어쓰지 않는다.
+    for name in sheets:
+        backup = out / name.replace(".csv", ".legacy.csv")
+        if not backup.exists():
+            atomic_write(backup, (out / name).read_bytes())
+    atomic_write(evaluator_path, (evaluator + "\n").encode())
+    for name in ("bundles.csv", "preferences.csv"):
+        fields = ("kind", "group", "grade", "reason") if name == "bundles.csv" else ("kind", "preference", "reason")
+        write_csv(out / name, [{k: row[k] for k in fields} for row in sheets[name]], fields)
+    write_csv(out / "reviews.csv", reviews, REVIEW_FIELDS)
+
+
 def report(out):
     manifest = frozen_manifest(out)
     samples = manifest["samples"]
-    reviews = reviewed_rows(out / "reviews.csv", ("sample_id", "criterion"),
-                             {(s["id"], c) for s in samples for c in CRITERIA[s["kind"]]})
-    bundles = reviewed_rows(out / "bundles.csv", ("kind", "group"), {(s["kind"], s["group"]) for s in samples})
+    migrate_review_sheet(out, samples)
+    evaluator = (out / "evaluator.txt").read_text().strip()
+    if not evaluator:
+        raise ValueError("evaluator.txt에 사람 평가자 이름을 한 번 입력하세요")
+    reviews = reviewed_rows(out / "reviews.csv", ("sample_id",), {(s["id"],) for s in samples},
+                            evaluator=evaluator, criteria={(s["id"],): CRITERIA[s["kind"]] for s in samples})
+    for s in samples:
+        if any(reviews[(s["id"],)][key] != s[key] for key in ("kind", "group", "case")):
+            raise ValueError("사람 판정의 영역·그룹·입력 정보를 변경하지 마세요")
+    bundles = reviewed_rows(out / "bundles.csv", ("kind", "group"), {(s["kind"], s["group"]) for s in samples}, evaluator=evaluator)
     preferences = reviewed_rows(out / "preferences.csv", ("kind",),
                   {(k,) for k in {s["kind"] for s in samples} if len({s["group"] for s in samples if s["kind"] == k}) == 2},
-                  {"", "A 우세", "비슷함", "B 우세"}, "preference")
+                  {"", "A 우세", "비슷함", "B 우세"}, "preference", evaluator=evaluator)
     for (kind, group), row in bundles.items():
         if row["grade"] and sum(s["kind"] == kind and s["group"] == group for s in samples) != 5:
             raise ValueError("5개 미만 탐색 묶음은 최종 일관성 판정 대상이 아닙니다")
@@ -423,7 +519,7 @@ def report(out):
     for s in samples:
         p = record_path(out, s)
         states[s["id"]] = read_json(p) if p.exists() else {"state": "planned", "cost_microusd": None}
-        grades = [reviews[(s["id"], c)]["grade"] for c in CRITERIA[s["kind"]]]
+        grades = [reviews[(s["id"],)][c] for c in CRITERIA[s["kind"]]]
         if states[s["id"]]["state"] == "completed":
             verdicts[s["id"]] = "불합격" if any(g in {"부분 충족", "미충족"} for g in grades) else "합격" if all(g == "충족" for g in grades) else "미평가"
         else:
@@ -440,6 +536,10 @@ def report(out):
         artifacts = [r["cli_artifact_ready_seconds"] for r in attempted if "cli_artifact_ready_seconds" in r]
         times = [r["api_seconds"] for r in attempted if "api_seconds" in r]
         pass_times = [states[s["id"]]["api_seconds"] for s in selected if verdicts[s["id"]] == "합격"]
+        bases = {r.get("cost_basis", "unknown") for r in attempted if r.get("cost_microusd") is not None}
+        if unknown:
+            bases.add("unknown")
+        basis = next(iter(bases)) if len(bases) == 1 else "mixed" if bases else "not_measured"
         bundle = bundles[(selected[0]["kind"], selected[0]["group"])]["grade"]
         row = {"model": model, "kind": selected[0]["kind"], "group": selected[0]["group"], "planned": len(selected),
                "attempted_slots": len(attempted), "generation_dispatched": sum(bool(r.get("request_started_at")) for r in attempted),
@@ -455,14 +555,23 @@ def report(out):
                "cli_artifact_ready_median_seconds": statistics.median(artifacts) if artifacts else "",
                "passed_api_median_seconds": statistics.median(pass_times) if pass_times else "",
                "bundle_consistency": bundle or "미평가", "browser_user_wait_seconds": "",
-               "phase": manifest["phase"], "cost_basis": "usage_uncached_upper_estimate" if selected[0]["kind"] == "image" else "usage_standard_rates"}
+               "phase": manifest["phase"], "cost_basis": basis}
         summary.append(row)
     write_csv(out / "summary.csv", summary, tuple(summary[0]))
     attempts = [{**s, **states[s["id"]], "verdict": verdicts[s["id"]]} for s in samples]
+    cases = {s["case"]: s["provenance"] for s in samples}
+    originals = sum(value == "actual_original" for value in cases.values())
+    synthetics = sum(value == "synthetic_capture_condition" for value in cases.values())
+    phase = "최종 비교" if manifest["phase"] == "final" else "탐색"
+    scope = (f"{phase} · 입력 {len(cases)}장(원본 {originals}장·합성 {synthetics}장) · "
+             f"모델 {len(summary)}개·모델별 계획 {len(cases)}건 · 전체 계획 {len(samples)}건·"
+             f"완료 {sum(r['completed'] for r in summary)}건. "
+             "실제 별도 촬영/동일 입력 반복의 재현성 증거 아님.")
     save_json(out / "results.json", {"summary": summary, "attempts": attempts,
+        "evaluator": evaluator, "human_reviews": list(reviews.values()),
         "human_preferences": list(preferences.values()), "human_bundles": list(bundles.values()),
-        "cost_note": "문구=표준 단가 사용량 추정, 이미지=캐시 할인 미적용 상한 추정. 예약은 실제 비용 아님.",
-        "evidence_scope": "원본 1장+합성 4장, 모델별 5개. 실제 별도 촬영/동일 입력 반복의 재현성 증거 아님."})
+        "cost_note": "cost_basis: usage_standard_rates=표준 단가 추정, usage_uncached_upper_estimate=캐시 할인 미적용 상한 추정, manual_billing_reconciliation=청구 확인 정산, mixed=근거 혼합, unknown=비용 미확정, not_measured=미실행, no_generation_sent=생성 미전송. 예약은 실제 비용 아님.",
+        "evidence_scope": scope})
     esc = lambda value: html.escape(str(value))
     sections = []
     for kind, group in sorted(bundles):
@@ -476,12 +585,12 @@ def report(out):
                 if (folder / file).exists():
                     media += f'<a href="samples/{s["id"]}/{file}">{label}<img alt="{label}" src="samples/{s["id"]}/{file}"></a>'
             draft = read_json(folder / "draft.json") if (folder / "draft.json").exists() else {}
-            checks = " · ".join(f'{c} {esc(reviews[(s["id"], c)]["grade"] or "미평가")}' for c in CRITERIA[kind])
+            checks = " · ".join(f'{c} {esc(reviews[(s["id"],)][c] or "미평가")}' for c in CRITERIA[kind])
             cards.append(f'<article><h3>{esc(s["case"])}</h3><p>ID: {s["id"]}</p>{media}<p>제목: {esc(draft.get("title", ""))}</p><pre>{esc(caption)}</pre><p>{esc(states[s["id"]]["state"])} / {verdicts[s["id"]]}</p><small>{checks}</small></article>')
         consistency = (bundles[(kind, group)]["grade"] or "미평가") if len(selected) == 5 else "탐색: 5개 미만으로 판정 대상 아님"
         sections.append(f'<section><h2>{"문구" if kind == "text" else "이미지"} 그룹 {group}</h2><p>묶음 일관성: {esc(consistency)}</p><div class="row">{"".join(cards)}</div></section>')
     definitions = "".join(f'<li>{key}: {esc(value)}</li>' for criteria in CRITERIA.values() for key, value in criteria.items())
-    page = '<!doctype html><html lang="ko"><meta charset="utf-8"><title>스푸키쿠키 사람 검증</title><style>body{font:16px system-ui;margin:24px;background:#f8f4ee;color:#39291f}h1,h2{color:#76472e}.row{display:flex;gap:16px;overflow-x:auto}article{flex:0 0 260px;padding:16px;background:white;border-radius:12px}img{width:100%;height:auto}pre{white-space:pre-wrap;font:inherit}small{line-height:1.7}section{margin:32px 0}</style><h1>스푸키쿠키 사람 검증</h1><p>모델명·비용은 가려져 있습니다. 최종 비교에서는 같은 그룹의 5개를 나란히 보고, 개별 품질과 묶음 일관성을 별도로 평가하세요. 입력 사진은 원본 1장과 합성 4장입니다. 부분 충족은 불합격입니다.</p><p>메인 상품: 큰 원형 스탠드 앞줄 오른쪽, 중앙에 가까운 쿠키 한 개. 다른 쿠키는 제거해야 합니다. 생성 원본과 4:5 미리보기를 모두 확인하세요.</p><details><summary>판정 기준</summary><ul>' + definitions + '</ul><p><a href="protocol.md">고정한 전체 평가 기준</a></p><p>reviews.csv: 개별 항목 / bundles.csv: 5개 묶음 일관성 / preferences.csv: A 우세·비슷함·B 우세와 이유. 판정마다 평가자와 이유를 적은 후 report를 다시 실행하세요. 정확한 기준은 docs/evaluation-protocol.md를 따릅니다.</p></details>' + ''.join(sections) + '</html>'
+    page = '<!doctype html><html lang="ko"><meta charset="utf-8"><title>스푸키쿠키 사람 검증</title><style>body{font:16px system-ui;margin:24px;background:#f8f4ee;color:#39291f}h1,h2{color:#76472e}.row{display:flex;gap:16px;overflow-x:auto}article{flex:0 0 260px;padding:16px;background:white;border-radius:12px}img{width:100%;height:auto}pre{white-space:pre-wrap;font:inherit}small{line-height:1.7}section{margin:32px 0}</style><h1>스푸키쿠키 사람 검증</h1><p>모델명·비용은 가려져 있습니다. 최종 비교에서는 같은 그룹의 5개를 나란히 보고, 개별 품질과 묶음 일관성을 별도로 평가하세요. 부분 충족은 불합격입니다.</p><p>' + esc(scope) + '</p><p>메인 상품: 큰 원형 스탠드 앞줄 오른쪽, 중앙에 가까운 쿠키 한 개. 다른 쿠키는 제거해야 합니다. 생성 원본과 4:5 미리보기를 모두 확인하세요.</p><p>reviews.csv는 결과당 한 행입니다. 문구 행의 T01~T09 또는 이미지 행의 H01~H04에 등급을 적고, 다른 영역은 비워 두세요. reason은 결과당 한 번만 씁니다. 공통 평가자는 evaluator.txt의 이름을 사용하며 기본값은 본인입니다. 세부 판정은 최종 비교 기준 총 130개입니다.</p><details><summary>판정 기준</summary><ul>' + definitions + '</ul><p><a href="protocol.md">고정한 전체 평가 기준</a></p><p>bundles.csv: 5개 묶음 일관성 / preferences.csv: A 우세·비슷함·B 우세와 이유. 판정을 저장한 후 report를 다시 실행하세요. 생성 당시 protocol.md의 기준은 유지하고 입력은 위 형식을 따릅니다.</p></details>' + ''.join(sections) + '</html>'
     atomic_write(out / "review.html", page.encode())
     return summary
 
@@ -495,6 +604,11 @@ def main(argv=None):
     p.add_argument("--phase", choices=("explore", "final"), default="final")
     p.add_argument("--model", choices=tuple(MODELS))
     p.add_argument("--case")
+    commands.add_parser("budget", help="기존 예산·미확정·초과 요청 조회(호출 없음)")
+    p = commands.add_parser("settle-call", help="기존 앱 요청의 청구액 정산(호출 없음)")
+    p.add_argument("--call-id", required=True)
+    p.add_argument("--cost-usd", required=True)
+    p.add_argument("--note", required=True)
     for command in ("run", "report", "settle"):
         p = commands.add_parser(command)
         p.add_argument("out", type=Path)
@@ -507,6 +621,13 @@ def main(argv=None):
             p.add_argument("--note", required=True)
     args = parser.parse_args(argv)
     try:
+        if args.command == "budget":
+            budget(Settings.from_env())
+            return
+        if args.command == "settle-call":
+            settle_app_call(Settings.from_env(), args.call_id, args.cost_usd, args.note)
+            print("기존 앱 요청 정산 완료. 변경 전후 금액과 근거를 원장에 보관했습니다")
+            return
         if args.command == "prepare":
             manifest = prepare(args.config, args.out, args.phase, args.model, args.case)
             print(f'{len(manifest["samples"])}개 계획 준비 완료: {args.out.resolve()}')

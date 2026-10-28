@@ -3,7 +3,7 @@
 import base64
 import json
 import re
-from decimal import ROUND_CEILING
+from decimal import Decimal, ROUND_CEILING
 
 import httpx
 from fastapi import HTTPException
@@ -52,9 +52,24 @@ INSTRUCTIONS = """너는 작은 베이커리 카페의 Instagram 콘텐츠 제�
 
 def validate_draft(draft, facts):
     permitted = json.dumps(facts, ensure_ascii=False)
-    numbers = lambda s: {
-        x.replace(",", "") for x in re.findall(r"\d[\d,]*(?:\.\d+)?", s)
-    }
+    date_pattern = re.compile(r"(?<![\d./])(\d{1,2})\s*(?:월\s*|[/\.])\s*(\d{1,2})(?:\s*일)?(?!\d|\.\d)")
+    dates = {tuple(map(int, match.groups())) for match in date_pattern.finditer(str(facts.get("period", "")))}
+
+    def numbers(text):
+        def date_numbers(match):
+            pair = tuple(map(int, match.groups()))
+            prefix, suffix = text[:match.start()], text[match.end():]
+            # 날짜와 같은 소수 금액·중량까지 허용하지 않는다.
+            amount = re.search(r"(?:[$₩€]|USD|KRW|가격|중량|무게|용량|달러)\s*$", prefix, re.I) or re.match(
+                r"\s*(?:원|만원|천원|달러|%|퍼센트|그램|킬로|리터|밀리|[A-Za-z])", suffix, re.I
+            )
+            date_context = "." not in match.group() or re.search(r"(?:[~～–—-]|부터)\s*$", prefix) or re.match(
+                r"\s*(?:[~～–—-]|부터|까지|일|에|한정|판매|종료|시작)", suffix
+            )
+            return f"{pair[0]} {pair[1]}" if pair in dates and not amount and date_context else match.group()
+        normalized = date_pattern.sub(date_numbers, text)
+        return {Decimal(value.replace(",", "")) for value in re.findall(r"\d[\d,]*(?:\.\d+)?", normalized)}
+
     if not numbers(draft.title + draft.caption + draft.hashtags) <= numbers(permitted):
         raise HTTPException(
             422,

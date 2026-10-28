@@ -39,3 +39,22 @@ def reserve(con, settings, owner_id, purpose, model, amount, post_id=None):
         (identifier, owner_id, post_id, purpose, model, amount, int(time.time())),
     )
     return identifier
+
+
+def reconcile(con, call_id, amount, note):
+    """쓰기 트랜잭션 안에서 확인한 청구액과 변경 전후 금액·근거를 보관한다."""
+    if type(amount) is not int or not 0 <= amount <= 2**63 - 1:
+        raise ValueError("정산 금액은 유효한 음수 아닌 microUSD 정수여야 합니다")
+    if not isinstance(note, str) or not 1 <= len(note.strip()) <= 2000:
+        raise ValueError("청구 확인 근거를 1~2000자로 남기세요")
+    call = con.execute("SELECT * FROM ai_calls WHERE id=?", (call_id,)).fetchone()
+    if not call:
+        raise HTTPException(404, "정산할 요청을 찾을 수 없습니다")
+    con.execute(
+        "INSERT INTO ai_cost_reconciliations(call_id, reserved_before_microusd, cost_before_microusd, cost_after_microusd, note, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (call_id, call["reserved_microusd"], call["cost_microusd"], amount, note.strip(), int(time.time())),
+    )
+    con.execute(
+        "UPDATE ai_calls SET cost_microusd=?, reserved_microusd=MAX(reserved_microusd, ?) WHERE id=?",
+        (amount, amount, call_id),
+    )

@@ -48,6 +48,12 @@ CREATE TABLE IF NOT EXISTS ai_calls (
     cost_microusd INTEGER, input_tokens INTEGER, output_tokens INTEGER,
     response_id TEXT, created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS ai_cost_reconciliations (
+    id INTEGER PRIMARY KEY, call_id TEXT NOT NULL REFERENCES ai_calls(id),
+    reserved_before_microusd INTEGER NOT NULL, cost_before_microusd INTEGER,
+    cost_after_microusd INTEGER NOT NULL CHECK(cost_after_microusd >= 0),
+    note TEXT NOT NULL, created_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS recommendations (
     id INTEGER PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES accounts(id),
     evidence_hash TEXT NOT NULL, content TEXT NOT NULL, created_at INTEGER NOT NULL,
