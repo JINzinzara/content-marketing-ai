@@ -29,7 +29,6 @@ class Settings:
     openai_model: str = "gpt-5.4-mini"
     style_input_ceiling_rate: Decimal = Decimal("0.75")
     style_output_rate: Decimal = Decimal("4.50")
-    recommendation_model: str = "gpt-5.4"
     draft_model: str = "gpt-5.4-mini"
     draft_input_ceiling_rate: Decimal = Decimal("0.75")
     draft_output_rate: Decimal = Decimal("4.50")
@@ -74,7 +73,6 @@ class Settings:
             openai_model=os.getenv("OPENAI_MODEL", "gpt-5.4-mini"),
             style_input_ceiling_rate=Decimal(os.getenv("OPENAI_STYLE_INPUT_CEILING_USD_PER_MILLION", "0.75")),
             style_output_rate=Decimal(os.getenv("OPENAI_STYLE_OUTPUT_USD_PER_MILLION", "4.50")),
-            recommendation_model=os.getenv("OPENAI_RECOMMENDATION_MODEL", "gpt-5.4"),
             draft_model=os.getenv("OPENAI_DRAFT_MODEL", "gpt-5.4-mini"),
             draft_input_ceiling_rate=Decimal(os.getenv("OPENAI_DRAFT_INPUT_CEILING_USD_PER_MILLION", "0.75")),
             draft_output_rate=Decimal(os.getenv("OPENAI_DRAFT_OUTPUT_USD_PER_MILLION", "4.50")),
@@ -121,13 +119,12 @@ class Settings:
         return {
             "style": (self.openai_model, self.style_input_ceiling_rate, self.style_output_rate),
             "draft": (self.draft_model, self.draft_input_ceiling_rate, self.draft_output_rate),
-            "recommendation": (self.recommendation_model, self.input_ceiling_rate, self.output_rate),
         }[purpose]
 
     def text_missing(self, purpose):
         model, incoming, outgoing = self.text_parameters(purpose)
-        prefix = {"style": "OPENAI_STYLE_", "draft": "OPENAI_DRAFT_", "recommendation": "OPENAI_"}[purpose]
-        model_key = {"style": "OPENAI_MODEL", "draft": "OPENAI_DRAFT_MODEL", "recommendation": "OPENAI_RECOMMENDATION_MODEL"}[purpose]
+        prefix = {"style": "OPENAI_STYLE_", "draft": "OPENAI_DRAFT_"}[purpose]
+        model_key = {"style": "OPENAI_MODEL", "draft": "OPENAI_DRAFT_MODEL"}[purpose]
         checks = {
             "OPENAI_ENABLED=true": self.openai_enabled,
             "OPENAI_API_KEY": bool(self.openai_key),

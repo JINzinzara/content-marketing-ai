@@ -43,8 +43,8 @@ CRITERIA = {
 GRADES = {"", "충족", "부분 충족", "미충족"}
 REVIEW_FIELDS = ("sample_id", "kind", "group", "case", *CRITERIA["text"], *CRITERIA["image"], "reason")
 SOURCE_FILES = ("model_compare.py", "analysis_compare.py", "style_pipeline_compare.py", "app/text_ai.py", "app/image_ai.py", "app/rendering.py",
-                "app/costs.py", "app/config.py", "app/db.py", "app/schema.sql", "app/styles.py", "app/analytics.py",
-                "docs/evaluation-protocol.md", "pyproject.toml")
+                "app/costs.py", "app/config.py", "app/db.py", "app/schema.sql", "app/styles.py", "app/analytics.py", "app/captions.py",
+                "README.md", "pyproject.toml")
 OWNER = "model-comparison"
 
 
@@ -166,7 +166,7 @@ def prepare(config_path, out, phase="final", model=None, case=None):
         manifest["git_head"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, stderr=subprocess.DEVNULL, text=True).strip()
     except subprocess.CalledProcessError:
         manifest["git_head"] = None
-    atomic_write(out / "protocol.md", (ROOT / "docs/evaluation-protocol.md").read_bytes())
+    atomic_write(out / "protocol.md", (ROOT / "README.md").read_bytes())
     manifest["files_sha256"]["protocol.md"] = digest((out / "protocol.md").read_bytes())
     for c, raw, photo in normalized:
         input_name = "inputs/" + c["id"] + ".jpg"

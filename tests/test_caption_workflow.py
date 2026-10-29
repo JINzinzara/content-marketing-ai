@@ -1,13 +1,9 @@
 """제작 경로의 실제 저장·검증 동작을 확인한다."""
-import json
-from decimal import Decimal
 import httpx
 import pytest
 from app.captions import caption_parts, caption_text
-from app.db import connect, ensure_account, owned_post
-from app.styles import FIELDS, latest_profile
+from app.db import connect, owned_post
 from test_generation import enable, response_body
-from test_styles import profile_form
 
 
 @pytest.mark.parametrize('body,tags,expected', [

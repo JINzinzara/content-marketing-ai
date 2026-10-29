@@ -91,7 +91,7 @@ def prepare(references, out, config_path=ROOT / "comparison/spooky-cookie.json")
     out.mkdir(parents=True, exist_ok=False, mode=0o700)
     for name in ("inputs", "references", "styles", "styles/requests", "styles/samples"):
         (out / name).mkdir()
-    save_input(out, manifest, "protocol.md", (ROOT / "docs/style-pipeline-comparison.md").read_bytes())
+    save_input(out, manifest, "protocol.md", (ROOT / "README.md").read_bytes())
     audit = {"profile_version": source["profile_version"], "previous_profile": source["previous_profile"]}
     save_input(out, manifest, "previous-confirmed-profile.json", json.dumps(audit, ensure_ascii=False, indent=2).encode())
     for i, (ref, photo) in enumerate(zip(refs, ref_photos), 1):

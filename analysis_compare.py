@@ -80,7 +80,7 @@ def prepare(config_path, out):
     out.mkdir(parents=True, exist_ok=False, mode=0o700)
     for name in ("inputs", "requests", "samples"):
         (out / name).mkdir()
-    atomic_write(out / "protocol.md", (ROOT / "docs/analysis-comparison.md").read_bytes())
+    atomic_write(out / "protocol.md", (ROOT / "README.md").read_bytes())
     manifest = {"version": 1, "suite": "analysis", "phase": "final", "run_id": secrets.token_hex(8),
                 "created_at": time.time(), "config": cfg, "source_sha256": mc.source_hashes(),
                 "files_sha256": {"protocol.md": mc.digest((out / "protocol.md").read_bytes())},

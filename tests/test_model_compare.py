@@ -72,6 +72,8 @@ def fill_reviews(out, grade="충족"):
 def test_freezes_twenty_slots_and_requires_execute(experiment, capsys):
     out, manifest, cfg, config = experiment
     assert len(manifest["samples"]) == 20
+    assert (out / "protocol.md").read_bytes() == (mc.ROOT / "README.md").read_bytes()
+    assert manifest["source_sha256"]["app/captions.py"] == mc.digest((mc.ROOT / "app/captions.py").read_bytes())
     assert all(sum(s["model"] == m for s in manifest["samples"]) == 5 for m in mc.MODELS)
     assert not cfg.data_dir.exists()
     mc.main(["run", str(out)])
