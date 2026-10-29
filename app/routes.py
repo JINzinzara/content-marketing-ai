@@ -18,7 +18,7 @@ from .auth import consume_oauth_state, csrf_token, form_data, owner, authorizati
 from .credits import finalize
 from .db import account, balance, connect, owned_post
 from .costs import spent
-from .instagram import caption_text
+from .captions import caption_parts
 from .rendering import UPLOAD_BYTES, atomic_write, normalize_photo, render
 from .image_ai import BUSY_PUBLISH
 
@@ -67,14 +67,16 @@ def validated(model, form):
 
 def save_draft(settings, owner_id, post, result):
     """생성 중 수정·삭제·게시된 내용을 덮어쓰지 않고 새 버전으로 저장한다."""
+    caption, hashtags = caption_parts(result.caption, result.hashtags)
     with connect(settings, write=True) as con:
         current = owned_post(con, owner_id, post["id"])
         if current["revision"] != post["revision"] or current["publish_state"] in BUSY_PUBLISH:
             raise HTTPException(409, "생성 중 내용이 변경되어 변경이 반영되지 않았습니다")
         con.execute(
             "UPDATE posts SET title=?, caption=?, hashtags=?, layout='split', source='ai', revision=revision+1 WHERE id=?",
-            (result.title, result.caption, result.hashtags, post["id"]),
+            (result.title, caption, hashtags, post["id"]),
         )
+
 
 
 def page(request, template, owner_id=None, **context):
@@ -472,6 +474,7 @@ def post_view(request: Request, post_id: str, who: Owner):
             )
         ]
         image_block = request.app.state.image_ai.block_reason(con, post)
+    post["caption"], post["hashtags"] = caption_parts(post["caption"], post["hashtags"])
     return page(
         request,
         "post.html",
@@ -491,6 +494,7 @@ def post_view(request: Request, post_id: str, who: Owner):
             row["state"] in {"queued", "running", "unknown"} for row in images
         ),
     )
+
 
 
 @router.post("/posts/{post_id}/delete")
@@ -620,7 +624,8 @@ def select_image(request: Request, post_id: str, who: Owner, form: Form):
 
 @router.post("/posts/{post_id}/edit")
 def edit_post(request: Request, post_id: str, who: Owner, form: Form):
-    fields = validated(EditInput, form)
+    caption, hashtags = caption_parts(str(form.get("caption", "")), str(form.get("hashtags", "")))
+    fields = validated(EditInput, {**dict(form), "caption": caption, "hashtags": hashtags})
     cfg = request.app.state.settings
     with connect(cfg, write=True) as con:
         post = owned_post(con, who, post_id)
@@ -657,6 +662,7 @@ def edit_post(request: Request, post_id: str, who: Owner, form: Form):
         else "수정 저장 완료"
     )
     return back("/posts/" + post_id)
+
 
 
 @router.post("/posts/{post_id}/generate")

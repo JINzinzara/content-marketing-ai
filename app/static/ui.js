@@ -124,7 +124,7 @@ window.addEventListener('pageshow', event => {
 });
 document.getElementById('copy-caption')?.addEventListener('click', async () => {
   const caption = document.getElementById('caption');
-  const text = [caption.value, document.getElementById('hashtags').value].filter(Boolean).join('\n\n');
+  const text = captionParts(caption.value, document.getElementById('hashtags').value).filter(Boolean).join('\n\n');
   try {
     await navigator.clipboard.writeText(text);
     document.getElementById('copy-message').textContent = '본문·태그 복사 완료';
@@ -150,13 +150,16 @@ document.getElementById('photo')?.addEventListener('change', event => {
   photoUrl = URL.createObjectURL(file); image.src = photoUrl; image.hidden = false;
 });
 
-// 본문·해시태그 수정은 로컬 미리보기만 바꾸며 AI를 다시 호출하지 않는다.
-for (const [input, output] of [['caption', 'feed-caption'], ['hashtags', 'feed-hashtags']]) {
-  document.getElementById(input)?.addEventListener('input', event => {
-    const target = document.getElementById(output);
-    if (target) target.textContent = event.target.value;
-  });
+// 입력 중인 결과도 저장·실제 게시와 같은 태그 배치를 보여준다.
+function updateCaptionPreview() {
+  const caption = document.getElementById('caption'), tags = document.getElementById('hashtags');
+  if (!caption || !tags) return;
+  const parts = captionParts(caption.value, tags.value);
+  document.getElementById('feed-caption').textContent = parts[0];
+  document.getElementById('feed-hashtags').textContent = parts[1];
 }
+for (const id of ['caption', 'hashtags']) document.getElementById(id)?.addEventListener('input', updateCaptionPreview);
+updateCaptionPreview();
 
 function shortMessage(value, fallback) { return typeof value === 'string' && value.length <= 15 ? value : fallback; }
 

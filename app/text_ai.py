@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from .db import balance, connect, owned_post
 from .costs import reserve as reserve_call
 from .styles import Style, post_style, reference_data
+from .captions import caption_parts
 
 
 class Draft(BaseModel):
@@ -39,6 +40,7 @@ INSTRUCTIONS = """너는 작은 베이커리 카페의 Instagram 콘텐츠 제�
 - 본문 예시에서는 문장 길이·존댓말·이모지·해시태그 사용을 참고하고 과거 상품 설명을 새 상품에 복사하지 않는다.
 - 새 상품의 확인된 사실만 사용한다. 과거 가격·기간·원재료·효능·할인을 현재 사실로 쓰지 않는다.
 - 사진만 보고 재료·맛·제조 방식·알레르기·인증을 확정하지 않는다. 불명확하면 추정임을 표시한다.
+- 해시태그는 hashtags 필드에만 넣고 caption 본문에는 넣지 않는다. 같은 태그를 중복하지 않는다.
 - 문구 생성에서는 frame 또는 split 레이아웃만 선택한다. 상품은 임의로 다시 그리지 않는다.
 - show_price가 false이면 제목·본문·해시태그에 가격을 쓰지 않는다. 가격 표시는 사용자가 켠 경우에만 허용한다.
 - 스타일 분석은 색감·조명·배경·구도·글자 배치·말투를 항목별로 설명하고 모르면 빈 문자열로 남긴다.
@@ -86,7 +88,7 @@ def validate_draft(draft, facts):
         "수제",
         "저당",
     ):
-        if term in draft.title + draft.caption and term not in permitted:
+        if term in draft.title + draft.caption + draft.hashtags and term not in permitted:
             raise HTTPException(
                 422, "확인되지 않은 상품 특징이 생성됐습니다. 사실 확인 후 수정해주세요"
             )
@@ -288,6 +290,11 @@ class TextAI:
             post_id=post_id,
             images=[image],
         )
+        caption, hashtags = caption_parts(result.caption, result.hashtags)
+        try:
+            result = Draft.model_validate({**result.model_dump(), "caption": caption, "hashtags": hashtags})
+        except ValidationError:
+            raise HTTPException(422, "본문과 해시태그의 길이를 확인해주세요") from None
         validate_draft(result, facts)
         if not show_price and re.search(
             r"(?:\d[\d,.]*\s*(?:만원|천원|원|KRW|USD|달러)|[₩$€]\s*\d)",

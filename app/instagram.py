@@ -12,6 +12,7 @@ from fastapi import HTTPException
 
 from .auth import decrypt, encrypt
 from .credits import finalize
+from .captions import caption_text
 from .db import account, connect, ensure_account, owned_post
 
 
@@ -454,7 +455,3 @@ class Instagram:
                 ),
             )
         return metrics
-
-
-def caption_text(post):
-    return (post["caption"].strip() + "\n\n" + post["hashtags"].strip()).strip()
