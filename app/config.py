@@ -26,7 +26,10 @@ class Settings:
     instagram_version: str = "v25.0"
     openai_enabled: bool = False
     openai_key: str = field(default="", repr=False)
-    openai_model: str = "gpt-5.4"
+    openai_model: str = "gpt-5.4-mini"
+    style_input_ceiling_rate: Decimal = Decimal("0.75")
+    style_output_rate: Decimal = Decimal("4.50")
+    recommendation_model: str = "gpt-5.4"
     draft_model: str = "gpt-5.4-mini"
     draft_input_ceiling_rate: Decimal = Decimal("0.75")
     draft_output_rate: Decimal = Decimal("4.50")
@@ -68,7 +71,10 @@ class Settings:
             instagram_version=os.getenv("INSTAGRAM_API_VERSION", "v25.0"),
             openai_enabled=os.getenv("OPENAI_ENABLED", "false").lower() == "true",
             openai_key=os.getenv("OPENAI_API_KEY", ""),
-            openai_model=os.getenv("OPENAI_MODEL", "gpt-5.4"),
+            openai_model=os.getenv("OPENAI_MODEL", "gpt-5.4-mini"),
+            style_input_ceiling_rate=Decimal(os.getenv("OPENAI_STYLE_INPUT_CEILING_USD_PER_MILLION", "0.75")),
+            style_output_rate=Decimal(os.getenv("OPENAI_STYLE_OUTPUT_USD_PER_MILLION", "4.50")),
+            recommendation_model=os.getenv("OPENAI_RECOMMENDATION_MODEL", "gpt-5.4"),
             draft_model=os.getenv("OPENAI_DRAFT_MODEL", "gpt-5.4-mini"),
             draft_input_ceiling_rate=Decimal(os.getenv("OPENAI_DRAFT_INPUT_CEILING_USD_PER_MILLION", "0.75")),
             draft_output_rate=Decimal(os.getenv("OPENAI_DRAFT_OUTPUT_USD_PER_MILLION", "4.50")),
@@ -111,25 +117,33 @@ class Settings:
             and self.redirect_url == self.public_url + "/auth/instagram/callback"
         )
 
-    @property
-    def ai_missing(self):
-        """비밀값을 노출하지 않고 부족한 텍스트 AI 설정 이름만 반환한다."""
+    def text_parameters(self, purpose):
+        return {
+            "style": (self.openai_model, self.style_input_ceiling_rate, self.style_output_rate),
+            "draft": (self.draft_model, self.draft_input_ceiling_rate, self.draft_output_rate),
+            "recommendation": (self.recommendation_model, self.input_ceiling_rate, self.output_rate),
+        }[purpose]
+
+    def text_missing(self, purpose):
+        model, incoming, outgoing = self.text_parameters(purpose)
+        prefix = {"style": "OPENAI_STYLE_", "draft": "OPENAI_DRAFT_", "recommendation": "OPENAI_"}[purpose]
+        model_key = {"style": "OPENAI_MODEL", "draft": "OPENAI_DRAFT_MODEL", "recommendation": "OPENAI_RECOMMENDATION_MODEL"}[purpose]
         checks = {
             "OPENAI_ENABLED=true": self.openai_enabled,
             "OPENAI_API_KEY": bool(self.openai_key),
-            "OPENAI_MODEL": bool(self.openai_model),
             "OPENAI_BUDGET_USD > 0": self.ai_budget_usd > 0,
-            "OPENAI_INPUT_CEILING_USD_PER_MILLION > 0": self.input_ceiling_rate > 0,
-            "OPENAI_OUTPUT_USD_PER_MILLION > 0": self.output_rate > 0,
-            "OPENAI_DRAFT_MODEL": bool(self.draft_model),
-            "OPENAI_DRAFT_INPUT_CEILING_USD_PER_MILLION > 0": self.draft_input_ceiling_rate > 0,
-            "OPENAI_DRAFT_OUTPUT_USD_PER_MILLION > 0": self.draft_output_rate > 0,
+            model_key: bool(model),
+            prefix + "INPUT_CEILING_USD_PER_MILLION > 0": incoming > 0,
+            prefix + "OUTPUT_USD_PER_MILLION > 0": outgoing > 0,
         }
-        return [name for name, ready in checks.items() if not ready]
+        return [key for key, ready in checks.items() if not ready]
+
+    @property
+    def ai_missing(self):
+        return list(dict.fromkeys(self.text_missing("style") + self.text_missing("draft")))
 
     @property
     def ai_ready(self):
-        """텍스트 AI 호출 설정의 준비 여부를 확인한다."""
         return not self.ai_missing
 
     @property
@@ -159,6 +173,10 @@ class Settings:
             self.ai_budget_usd,
             self.input_ceiling_rate,
             self.output_rate,
+            self.style_input_ceiling_rate,
+            self.style_output_rate,
+            self.draft_input_ceiling_rate,
+            self.draft_output_rate,
             self.image_reserve_usd,
             self.image_text_rate,
             self.image_input_rate,

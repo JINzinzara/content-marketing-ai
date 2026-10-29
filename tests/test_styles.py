@@ -131,7 +131,7 @@ def test_uploaded_references_selected_for_analysis_require_confirmation(
 
     def handler(request):
         body = json.loads(request.content)
-        assert body["model"] == "gpt-5.4"
+        assert body["model"] == "gpt-5.4-mini"
         assert body["input"][0]["content"][1]["image_url"].startswith(
             "data:image/jpeg;base64,"
         )
@@ -344,8 +344,8 @@ def test_disabled_analysis_explains_missing_settings_without_exposing_values(app
     enable(settings)
     secret = settings.openai_key = "private-value-never-render"
     settings.openai_enabled = False
-    settings.output_rate = 0
-    assert settings.ai_missing == ["OPENAI_ENABLED=true", "OPENAI_OUTPUT_USD_PER_MILLION > 0"]
+    settings.style_output_rate = 0
+    assert settings.ai_missing == ["OPENAI_ENABLED=true", "OPENAI_STYLE_OUTPUT_USD_PER_MILLION > 0"]
     html = client.get("/shop").text
     assert 'id="style-setup-info"' in html and 'id="style-setup-message"' in html
     assert "텍스트 AI 설정 필요" in html and "OPENAI_ENABLED=true" in html
@@ -354,7 +354,7 @@ def test_disabled_analysis_explains_missing_settings_without_exposing_values(app
         con.execute("UPDATE accounts SET description='가게 소개' WHERE id='local-owner'")
     response = client.post("/shop/analyze", data={"csrf": csrf})
     assert response.status_code == 503 and "OPENAI_ENABLED=true" in response.text and secret not in response.text
-    settings.openai_enabled, settings.output_rate = True, 50
+    settings.openai_enabled, settings.style_output_rate = True, 50
     assert settings.ai_ready
     html = client.get("/shop").text
     assert 'id="style-setup-info"' not in html and secret not in html
@@ -366,7 +366,7 @@ def test_connections_explain_both_ai_settings_without_calling_or_exposing_secret
     enable(settings)
     enable_image(settings)
     settings.openai_key = "private-key-never-render"
-    settings.input_ceiling_rate = 0
+    settings.style_input_ceiling_rate = 0
     settings.image_reserve_usd = 0
     settings.image_output_rate = 0
     assert settings.image_missing == ["IMAGE_CALL_RESERVE_USD > 0", "IMAGE_OUTPUT_USD_PER_MILLION > 0"]
@@ -374,10 +374,10 @@ def test_connections_explain_both_ai_settings_without_calling_or_exposing_secret
     html = client.get('/connections').text
     assert 'data-ai-setup="text-setup-message"' in html
     assert 'data-ai-setup="image-setup-message"' in html
-    assert "OPENAI_INPUT_CEILING_USD_PER_MILLION" in html
+    assert "OPENAI_STYLE_INPUT_CEILING_USD_PER_MILLION" in html
     assert "IMAGE_CALL_RESERVE_USD" in html and "IMAGE_OUTPUT_USD_PER_MILLION" in html
     assert settings.openai_key not in html
-    settings.input_ceiling_rate = 5
+    settings.style_input_ceiling_rate = 5
     settings.image_reserve_usd = 1
     settings.image_output_rate = 15
     assert settings.ai_ready and settings.image_ready

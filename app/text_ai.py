@@ -170,22 +170,19 @@ class TextAI:
         self, owner_id, purpose, data, result_type, *, post_id=None, images=()
     ):
         cfg = self.settings
-        if not cfg.ai_ready:
-            raise HTTPException(
-                503, "텍스트 AI 설정이 필요합니다.\n" + "\n".join(cfg.ai_missing)
-            )
-        if purpose == "draft":
-            cfg = replace(cfg, openai_model=cfg.draft_model,
-                          input_ceiling_rate=cfg.draft_input_ceiling_rate,
-                          output_rate=cfg.draft_output_rate)
+        missing = cfg.text_missing(purpose)
+        if missing:
+            raise HTTPException(503, "텍스트 AI 설정이 필요합니다.\n" + "\n".join(missing))
+        model, incoming, outgoing = cfg.text_parameters(purpose)
+        cfg = replace(cfg, openai_model=model, input_ceiling_rate=incoming, output_rate=outgoing)
         base = response_payload(cfg.openai_model, data, result_type, images)
-        if purpose == "draft":
+        if purpose in {"draft", "style"}:
             base["reasoning"] = {"effort": "none"}
         # 비용 계산에는 이미지와 출력 형태까지 동일한 요청 사용
         with connect(cfg) as con:
-            self._check_allowance(con, owner_id, post_id)
+            self._check_allowance(con, owner_id, post_id, purpose)
         count = self._json("responses/input_tokens", base).get("input_tokens")
-        if not isinstance(count, int) or count < 0:
+        if type(count) is not int or count < 0:
             raise HTTPException(502, "입력 토큰 수를 확인하지 못해 생성하지 않았습니다")
         reserve = int(
             (
@@ -193,14 +190,14 @@ class TextAI:
             ).to_integral_value(rounding=ROUND_CEILING)
         )
         with connect(cfg, write=True) as con:
-            self._check_allowance(con, owner_id, post_id)
+            self._check_allowance(con, owner_id, post_id, purpose)
             call_id = reserve_call(
                 con, cfg, owner_id, purpose, cfg.openai_model, reserve, post_id
             )
         result = self._json(
             "responses",
             {**base, "max_output_tokens": cfg.max_output_tokens, "store": False,
-             **({"service_tier": "default"} if purpose == "draft" else {})},
+             **({"service_tier": "default"} if purpose in {"draft", "style"} else {})},
         )
         usage = result.get("usage") or {}
         incoming, outgoing = usage.get("input_tokens"), usage.get("output_tokens")
@@ -229,7 +226,9 @@ class TextAI:
                 )
         return parse_response(result, result_type)
 
-    def _check_allowance(self, con, owner_id, post_id):
+    def _check_allowance(self, con, owner_id, post_id, purpose):
+        if con.execute("SELECT 1 FROM ai_calls WHERE owner_id=? AND post_id IS ? AND purpose=? AND cost_microusd IS NULL LIMIT 1", (owner_id, post_id, purpose)).fetchone():
+            raise HTTPException(409, "이전 AI 요청의 결과와 비용을 확인한 뒤 진행해주세요")
         paid = False
         if post_id:
             owned_post(con, owner_id, post_id)

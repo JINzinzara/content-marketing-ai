@@ -23,6 +23,8 @@ def enable(settings, budget="1"):
     settings.output_rate = Decimal("50")
     settings.draft_input_ceiling_rate = settings.input_ceiling_rate
     settings.draft_output_rate = settings.output_rate
+    settings.style_input_ceiling_rate = settings.input_ceiling_rate
+    settings.style_output_rate = settings.output_rate
 
 
 def response_body(text=None, status="completed"):
@@ -286,7 +288,7 @@ def test_timeout_keeps_reserved_cost_and_does_not_retry(
             client.post(
                 f"/posts/{identifier}/generate", data={"csrf": csrf}
             ).status_code
-            == 402
+            == 409
         )
     assert calls.count("/v1/responses") == 1
     with connect(settings) as con:
