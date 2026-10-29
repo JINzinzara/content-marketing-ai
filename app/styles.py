@@ -104,7 +104,7 @@ def latest_profile(con, owner_id, status="confirmed"):
     )
 
 
-def reference_list(con, owner_id):
+def reference_list(con, owner_id, *, include_history=True):
     """사용자가 업로드한 사진과 연결된 본인 게시물의 선택 목록을 반환"""
     local = [
         {
@@ -118,6 +118,8 @@ def reference_list(con, owner_id):
             (owner_id,),
         )
     ]
+    if not include_history:
+        return local
     history = [
         {
             "id": "ig:" + r["media_id"],
@@ -136,6 +138,16 @@ def reference_list(con, owner_id):
         )
     ]
     return history + local
+
+
+def automatic_references(con, owner_id, source, limit):
+    if source == "instagram":
+        rows = con.execute("SELECT media_id AS id FROM history WHERE owner_id=? AND deleted_at IS NULL ORDER BY published_at DESC, rowid DESC LIMIT ?", (owner_id, limit))
+        prefix = "ig:"
+    else:
+        rows = con.execute("SELECT id FROM style_references WHERE owner_id=? AND deleted_at IS NULL ORDER BY created_at DESC, rowid DESC LIMIT ?", (owner_id, limit))
+        prefix = "local:"
+    return [prefix + row["id"] for row in rows]
 
 
 def reference_data(settings, con, owner_id, reference_id, *, include_image=True, skip_deleted=False):

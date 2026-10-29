@@ -21,6 +21,7 @@ from .costs import spent
 from .captions import caption_parts
 from .rendering import UPLOAD_BYTES, atomic_write, normalize_photo, render
 from .image_ai import BUSY_PUBLISH
+from .instagram import InstagramError
 
 router = APIRouter()
 Owner = Annotated[str, Depends(owner)]
@@ -158,47 +159,28 @@ def studio(request: Request, who: Owner):
 @router.get("/shop")
 def shop_view(request: Request, who: Owner):
     with connect(request.app.state.settings) as con:
-        history = [
-            dict(row)
-            for row in con.execute(
-                "SELECT * FROM history WHERE owner_id=? ORDER BY published_at DESC LIMIT 50",
-                (who,),
-            )
-        ]
         profile, proposal = styles.latest_profile(con, who), styles.latest_profile(
             con, who, "proposal"
         )
         if profile and proposal and proposal["version"] < profile["version"]:
             proposal = None
-        references = styles.reference_list(con, who)
+        references = styles.reference_list(con, who, include_history=False)
     return page(
         request,
         "shop.html",
         who,
-        history=history,
         references=references,
         profile=profile,
         proposal=proposal,
         style_fields=styles.FIELDS,
-        next_cursor=request.session.get("history_next", ""),
+        reference_limit=request.app.state.settings.history_page_size,
     )
+
 
 
 @router.post("/shop")
 def save_shop(request: Request, who: Owner, form: Form):
-    values = {
-        key: str(form.get(key, "")).strip()
-        for key in ("name", "description", "style", "reference_notes", "color")
-    }
-    if (
-        not 1 <= len(values["name"]) <= 40
-        or len(values["description"]) > 1000
-        or len(values["style"]) > 2400
-        or len(values["reference_notes"]) > 5000
-    ):
-        raise HTTPException(422, "가게 이름과 설명의 길이를 확인해주세요")
-    if not re.fullmatch(r"#[0-9a-fA-F]{6}", values["color"]):
-        raise HTTPException(422, "올바른 색상을 선택해주세요")
+    values = shop_values(form)
     with connect(request.app.state.settings, write=True) as con:
         if any("style_" + key in form for key in styles.FIELDS):
             current = styles.latest_profile(con, who)
@@ -249,6 +231,7 @@ def save_shop(request: Request, who: Owner, form: Form):
                 "locked_fields": locked,
                 "evidence": source.get("evidence", []),
                 "uncertainties": source.get("uncertainties", []),
+                "reference_scope": source.get("reference_scope", {}),
             }
             styles.save_profile(con, who, content, refs, "confirmed")
         con.execute(
@@ -257,6 +240,7 @@ def save_shop(request: Request, who: Owner, form: Form):
         )
     request.session["notice"] = "스타일 저장 완료"
     return back("/shop")
+
 
 
 @router.post("/shop/analyze")
@@ -280,27 +264,7 @@ def analyze_shop(request: Request, who: Owner, form: Form):
         raise HTTPException(
             422, "기존 게시물을 선택하거나 가게 설명·참고 자료를 먼저 저장해주세요"
         )
-    images, examples = [], []
-    for row in references:
-        if row["image"]:
-            images.append(row["image"])
-        examples.append({
-            "id": row["id"],
-            "caption": row["caption"][:2200],
-            "image_index": len(images) if row["image"] else None,
-        })
-    result = request.app.state.ai.generate(
-        who,
-        "style",
-        {
-            "task": "style_analysis",
-            "shop_description": shop["description"],
-            "reference_notes": shop["reference_notes"],
-            "past_post_examples": examples,
-        },
-        Style,
-        images=images,
-    )
+    result = analyze_references(request.app.state.ai, who, shop, references)
     proposal = (
         result.summary
         + "\n\n근거:\n"
@@ -319,6 +283,7 @@ def analyze_shop(request: Request, who: Owner, form: Form):
         "스타일 제안 확인 필요"
     )
     return back("/shop")
+
 
 
 @router.post("/shop/references")
@@ -900,3 +865,88 @@ def purchase(request: Request, who: Owner):
 def logout(request: Request, who: Owner, form: Form):
     request.session.clear()
     return back("/")
+
+
+def shop_values(form):
+    values = {
+        key: str(form.get(key, "")).strip()
+        for key in ("name", "description", "style", "reference_notes", "color")
+    }
+    if (
+        not 1 <= len(values["name"]) <= 40
+        or len(values["description"]) > 1000
+        or len(values["style"]) > 2400
+        or len(values["reference_notes"]) > 5000
+    ):
+        raise HTTPException(422, "가게 이름과 설명의 길이를 확인해주세요")
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", values["color"]):
+        raise HTTPException(422, "올바른 색상을 선택해주세요")
+    return values
+
+
+
+def analyze_references(ai, who, shop, references):
+    images, examples = [], []
+    for row in references:
+        if row["image"]:
+            images.append(row["image"])
+        examples.append({"id": row["id"], "caption": row["caption"][:2200],
+                         "image_index": len(images) if row["image"] else None})
+    return ai.generate(who, "style", {
+        "task": "style_analysis", "shop_description": shop["description"],
+        "reference_notes": shop["reference_notes"], "past_post_examples": examples,
+    }, Style, images=images)
+
+
+
+@router.post("/shop/fill")
+def fill_shop(request: Request, who: Owner, form: Form):
+    cfg = request.app.state.settings
+    values = shop_values(form)
+    try:
+        version = int(form.get("profile_version", "0"))
+        attributes = styles.Attributes.model_validate({key: str(form.get("style_" + key, "")).strip() for key in styles.FIELDS}).model_dump()
+    except (ValueError, ValidationError):
+        raise HTTPException(422, "스타일 항목과 버전을 확인해주세요") from None
+    locked = list(dict.fromkeys(form.getlist("locked_fields")))
+    if any(key not in attributes or not attributes[key] for key in locked):
+        raise HTTPException(422, "입력한 항목만 고정할 수 있습니다")
+    source = str(form.get("reference_source", "instagram"))
+    if source not in {"instagram", "local"}:
+        raise HTTPException(422, "참고 자료 종류를 확인해주세요")
+    with connect(cfg) as con:
+        current = styles.latest_profile(con, who)
+    if version != (current["version"] if current else 0):
+        raise HTTPException(409, "저장된 스타일이 변경됐습니다. 새로고침 후 확인해주세요")
+    if values["style"] and all(attributes.values()):
+        return {"message": "채울 빈칸이 없어요"}
+    shop = account(cfg, who)
+    if source == "instagram":
+        if not shop["token"]:
+            return JSONResponse({"detail": "Instagram 연결이 필요합니다", "connect_url": "/auth/instagram"}, status_code=409)
+        try:
+            request.app.state.instagram.sync_history(who)
+        except InstagramError as exc:
+            if exc.kind == "auth":
+                return JSONResponse({"detail": str(exc), "connect_url": "/auth/instagram"}, status_code=409)
+            raise
+    with connect(cfg) as con:
+        selected = styles.automatic_references(con, who, source, cfg.history_page_size)
+        references = [styles.reference_data(cfg, con, who, identifier) for identifier in selected]
+    if not references:
+        raise HTTPException(422, "분석할 참고 자료가 없어 빈칸을 유지했습니다. 참고 사진을 추가해주세요")
+    result = analyze_references(request.app.state.ai, who, values, references)
+    content = result.model_dump()
+    content["summary"] = values["style"] or content["summary"]
+    content["attributes"] = {key: value or content["attributes"][key] for key, value in attributes.items()}
+    content["locked_fields"] = locked
+    content["reference_scope"] = {"source": source, "limit": cfg.history_page_size, "analyzed_ids": selected,
+                                  "image_count": sum(bool(r["image"]) for r in references)}
+    with connect(cfg, write=True) as con:
+        latest = styles.latest_profile(con, who)
+        if version != (latest["version"] if latest else 0):
+            raise HTTPException(409, "분석 중 스타일이 변경되어 제안을 적용하지 않았습니다")
+        refs = list(dict.fromkeys((current["reference_ids"] if current else []) + selected))
+        proposal_version = styles.save_profile(con, who, content, refs, "proposal")
+    return {"content": content, "proposal_version": proposal_version,
+            "message": f"참고 자료 {len(references)}개의 빈칸 제안입니다. 확인 후 저장해주세요"}

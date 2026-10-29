@@ -239,8 +239,8 @@ def test_all_imported_references_are_visible_and_can_be_selected(client, csrf, s
     with connect(settings) as con:
         assert {r["id"] for r in reference_list(con, "local-owner")} == set(ids)
     html = client.get("/shop").text
-    assert all(f'value="{identifier}"' in html for identifier in ids)
-    assert 'id="references-all"' in html and 'id="references-count"' in html
+    assert all(f'value="{identifier}"' not in html for identifier in ids)
+    assert 'id="references-all"' not in html and 'formaction="/shop/fill"' in html
     assert "최대 3개" not in html
 
 

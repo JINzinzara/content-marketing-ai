@@ -63,31 +63,62 @@ for (const button of document.querySelectorAll('[data-ai-setup]')) {
     showNotice(document.getElementById(button.dataset.aiSetup).textContent, {title:button.dataset.title});
   });
 }
-const styleForm = document.getElementById('style-analysis');
-if (styleForm) {
-  const choices = [...document.querySelectorAll('#style-references input[name="reference_id"]')];
-  const selectAll = document.getElementById('references-all');
-  function updateSelection() {
-    const count = choices.filter(item => item.checked).length;
-    selectAll.checked = choices.length > 0 && count === choices.length;
-    selectAll.indeterminate = count > 0 && count < choices.length;
-    document.getElementById('references-count').textContent = `${count}개 선택`;
+const shopForm = document.getElementById('shop-settings');
+if (shopForm) {
+  const draftKey = 'posting-style-draft:' + shopForm.dataset.owner;
+  shopForm.addEventListener('submit', async event => {
+    const button = event.submitter;
+    if (!button?.hasAttribute('formaction')) { sessionStorage.removeItem(draftKey); return; }
+    event.preventDefault();
+    if (shopForm.dataset.filling) return;
+    shopForm.dataset.filling = 'yes'; button.disabled = true;
+    const status = document.getElementById('style-fill-status');
+    status.textContent = '기존 게시물에서 빈칸을 확인하고 있어요';
+    const data = new FormData(shopForm); data.set('reference_source', button.value);
+    try {
+      const response = await fetch(button.formAction, {method:'POST', body:data, headers:{'Accept':'application/json'}});
+      const result = await response.json();
+      if (result.connect_url) {
+        sessionStorage.setItem(draftKey, JSON.stringify([...data].filter(([key]) => key !== 'csrf')));
+        window.location.assign(result.connect_url); return;
+      }
+      if (!response.ok) throw new Error(result.detail || '스타일 제안을 만들지 못했어요');
+      if (result.content) {
+        // 요청 후 사용자가 새로 입력한 값도 보존한다.
+        if (!shopForm.elements.style.value.trim()) shopForm.elements.style.value = result.content.summary;
+        for (const [key, value] of Object.entries(result.content.attributes)) {
+          const field = shopForm.elements['style_' + key];
+          if (!field.value.trim()) field.value = value;
+        }
+        shopForm.elements.proposal_version.value = result.proposal_version;
+        document.getElementById('style-fill-evidence').textContent = [...result.content.evidence, ...result.content.uncertainties].join(' / ');
+      }
+      status.textContent = result.message;
+    } catch (error) {
+      status.textContent = '입력한 내용은 유지했어요';
+      showNotice(error.message, {title:'스타일 제안 확인'});
+    } finally { delete shopForm.dataset.filling; button.disabled = false; }
+  });
+  const pending = sessionStorage.getItem(draftKey);
+  if (pending && shopForm.dataset.connected === 'yes') {
+    try {
+      const values = new FormData();
+      for (const [key, value] of JSON.parse(pending)) values.append(key, value);
+      if (values.get('profile_version') === shopForm.elements.profile_version.value) {
+        for (const [key, value] of values) {
+          const field = shopForm.elements.namedItem(key);
+          if (field && !['locked_fields', 'reference_source'].includes(key)) field.value = value;
+        }
+        for (const field of shopForm.querySelectorAll('[name="locked_fields"]')) field.checked = values.getAll('locked_fields').includes(field.value);
+        sessionStorage.removeItem(draftKey);
+        shopForm.requestSubmit(shopForm.querySelector('[value="instagram"]'));
+      } else showNotice('저장된 스타일이 변경되어 연결 전 임시 입력을 자동 적용하지 않았어요.');
+    } catch { showNotice('연결 전 입력을 복원하지 못했어요. 저장된 스타일을 확인해주세요.'); }
   }
-  selectAll.addEventListener('change', () => {
-    for (const item of choices) item.checked = selectAll.checked;
-    updateSelection();
-  });
-  for (const item of choices) item.addEventListener('change', updateSelection);
-  updateSelection();
-  // 분석 개수를 폼 필드 수 제한과 분리한다. 선택 ID를 버리거나 일부만 보내지 않는다.
-  styleForm.addEventListener('formdata', event => {
-    const selected = event.formData.getAll('reference_id');
-    event.formData.delete('reference_id');
-    event.formData.set('reference_ids', JSON.stringify(selected));
-  });
 }
 
 document.addEventListener('submit', event => {
+    if (event.defaultPrevented) return;
     const form = event.target;
     if (!(form instanceof HTMLFormElement) || form.method.toLowerCase() !== 'post') return;
     if (form.dataset.submitting) { event.preventDefault(); return; }

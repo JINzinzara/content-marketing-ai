@@ -63,7 +63,7 @@ def test_sync_history_can_be_selected_by_id_and_metrics_render(app, client, csrf
     with httpx.Client(transport=httpx.MockTransport(handler)) as external:
         app.state.instagram.client = external
         synced = client.post("/instagram/sync", data={"csrf": csrf, "after": "page-one"})
-        assert synced.status_code == 200 and "page-two" in synced.text
+        assert synced.status_code == 200 and 'id="references-all"' not in synced.text
         assert client.post("/instagram/sync", data={"csrf": csrf, "after": "x" * 2001}).status_code == 422
         assert client.post("/analytics/collect", data={"csrf": csrf, "media_id": "media-1"}).status_code == 200
     with connect(settings) as con:
