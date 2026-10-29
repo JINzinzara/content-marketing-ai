@@ -9,6 +9,7 @@ import httpx
 import pytest
 
 from app.db import connect, owned_post
+from app.config import Settings
 from fastapi import HTTPException
 
 
@@ -16,9 +17,12 @@ def enable(settings, budget="1"):
     settings.openai_enabled = True
     settings.openai_key = "not-a-real-key"
     settings.openai_model = "test-model"
+    settings.draft_model = "test-model"
     settings.ai_budget_usd = Decimal(budget)
     settings.input_ceiling_rate = Decimal("12.5")
     settings.output_rate = Decimal("50")
+    settings.draft_input_ceiling_rate = settings.input_ceiling_rate
+    settings.draft_output_rate = settings.output_rate
 
 
 def response_body(text=None, status="completed"):
@@ -105,6 +109,64 @@ def test_structured_output_token_preflight_and_usage_record(
         usage = con.execute("SELECT * FROM ai_calls").fetchone()
         assert usage["state"] == "completed" and usage["output_tokens"] == 100
         assert usage["cost_microusd"] == 6250
+
+
+@pytest.mark.parametrize("budget,status", [("1", 200), ("0.001", 402)])
+def test_default_mini_draft_uses_its_own_model_rates_and_budget(
+    app, client, csrf, new_post, settings, budget, status
+):
+    identifier = new_post()
+    enable(settings, budget)
+    defaults = Settings()
+    settings.draft_model = defaults.draft_model
+    settings.draft_input_ceiling_rate = defaults.draft_input_ceiling_rate
+    settings.draft_output_rate = defaults.draft_output_rate
+    original = (settings.openai_model, settings.input_ceiling_rate, settings.output_rate)
+    calls = []
+
+    def handler(request):
+        payload = json.loads(request.content)
+        calls.append(request.url.path)
+        assert payload["model"] == "gpt-5.4-mini"
+        assert payload["reasoning"] == {"effort": "none"}
+        if request.url.path.endswith("input_tokens"):
+            assert "service_tier" not in payload
+            return httpx.Response(200, json={"input_tokens": 100})
+        assert payload["service_tier"] == "default" and payload["store"] is False
+        return httpx.Response(200, json=response_body())
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as external:
+        app.state.ai.client = external
+        assert client.post(f"/posts/{identifier}/generate", data={"csrf": csrf}).status_code == status
+    assert (settings.openai_model, settings.input_ceiling_rate, settings.output_rate) == original
+    with connect(settings) as con:
+        rows = con.execute("SELECT * FROM ai_calls").fetchall()
+        if status == 200:
+            assert len(rows) == 1 and rows[0]["model"] == "gpt-5.4-mini"
+            assert rows[0]["reserved_microusd"] == 9291
+            assert rows[0]["cost_microusd"] == 525
+        else:
+            assert not rows and calls == ["/v1/responses/input_tokens"]
+
+
+def test_draft_env_defaults_and_overrides_do_not_change_analysis_model(monkeypatch):
+    monkeypatch.setattr("app.config.load_dotenv", lambda *a, **kw: None)
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-5.4")
+    for name in ("OPENAI_DRAFT_MODEL", "OPENAI_DRAFT_INPUT_CEILING_USD_PER_MILLION",
+                 "OPENAI_DRAFT_OUTPUT_USD_PER_MILLION"):
+        monkeypatch.delenv(name, raising=False)
+    cfg = Settings.from_env()
+    assert (cfg.draft_model, cfg.draft_input_ceiling_rate, cfg.draft_output_rate) == (
+        "gpt-5.4-mini", Decimal("0.75"), Decimal("4.50"))
+    monkeypatch.setenv("OPENAI_DRAFT_MODEL", "custom-draft")
+    monkeypatch.setenv("OPENAI_DRAFT_INPUT_CEILING_USD_PER_MILLION", "1.25")
+    monkeypatch.setenv("OPENAI_DRAFT_OUTPUT_USD_PER_MILLION", "8")
+    cfg = Settings.from_env()
+    assert (cfg.draft_model, cfg.draft_input_ceiling_rate, cfg.draft_output_rate) == (
+        "custom-draft", Decimal("1.25"), Decimal("8"))
+    assert cfg.openai_model == "gpt-5.4"
+    cfg.draft_output_rate = Decimal("0")
+    assert not cfg.ai_ready and "OPENAI_DRAFT_OUTPUT_USD_PER_MILLION > 0" in cfg.ai_missing
 
 
 def test_budget_stops_model_request_before_spend(app, client, csrf, new_post, settings):

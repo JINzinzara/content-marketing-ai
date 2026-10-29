@@ -1,4 +1,4 @@
-"""GPT-5.4·GPT Image 2 설정과 로컬 저장·인증·통합 예산 검증"""
+"""문구·스타일 분석·이미지 모델 설정과 로컬 저장·인증·통합 예산 검증"""
 
 import os
 import secrets
@@ -27,6 +27,9 @@ class Settings:
     openai_enabled: bool = False
     openai_key: str = field(default="", repr=False)
     openai_model: str = "gpt-5.4"
+    draft_model: str = "gpt-5.4-mini"
+    draft_input_ceiling_rate: Decimal = Decimal("0.75")
+    draft_output_rate: Decimal = Decimal("4.50")
     image_enabled: bool = False
     image_model: str = "gpt-image-2"
     image_quality: str = "low"
@@ -66,6 +69,9 @@ class Settings:
             openai_enabled=os.getenv("OPENAI_ENABLED", "false").lower() == "true",
             openai_key=os.getenv("OPENAI_API_KEY", ""),
             openai_model=os.getenv("OPENAI_MODEL", "gpt-5.4"),
+            draft_model=os.getenv("OPENAI_DRAFT_MODEL", "gpt-5.4-mini"),
+            draft_input_ceiling_rate=Decimal(os.getenv("OPENAI_DRAFT_INPUT_CEILING_USD_PER_MILLION", "0.75")),
+            draft_output_rate=Decimal(os.getenv("OPENAI_DRAFT_OUTPUT_USD_PER_MILLION", "4.50")),
             image_enabled=os.getenv("OPENAI_IMAGE_ENABLED", "false").lower() == "true",
             image_model=os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-2"),
             image_quality=os.getenv("OPENAI_IMAGE_QUALITY", "low"),
@@ -115,6 +121,9 @@ class Settings:
             "OPENAI_BUDGET_USD > 0": self.ai_budget_usd > 0,
             "OPENAI_INPUT_CEILING_USD_PER_MILLION > 0": self.input_ceiling_rate > 0,
             "OPENAI_OUTPUT_USD_PER_MILLION > 0": self.output_rate > 0,
+            "OPENAI_DRAFT_MODEL": bool(self.draft_model),
+            "OPENAI_DRAFT_INPUT_CEILING_USD_PER_MILLION > 0": self.draft_input_ceiling_rate > 0,
+            "OPENAI_DRAFT_OUTPUT_USD_PER_MILLION > 0": self.draft_output_rate > 0,
         }
         return [name for name, ready in checks.items() if not ready]
 

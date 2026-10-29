@@ -26,10 +26,12 @@ from app.costs import microusd, reconcile, reserve, spent
 from app.db import connect, initialize
 from app.image_ai import edit_payload, edit_prompt, generated_png
 from app.rendering import atomic_write, fit_photo, normalize_photo
-from app.text_ai import Draft, parse_response, response_payload, validate_draft
+from app.text_ai import Draft, Recommendation, Style, parse_response, response_payload, validate_draft
 
 MODELS = {"gpt-5.4-mini": "text", "gpt-5.4": "text",
           "gpt-image-1-mini": "image", "gpt-image-2": "image"}
+RESULT_TYPES = {"text": Draft, "style": Style, "recommendation": Recommendation}
+SUITE_RUNNERS = {"analysis": "analysis_compare.py", "style_pipeline": "style_pipeline_compare.py"}
 CRITERIA = {
     "text": {"T01": "본문 상품명·종류", "T02": "본문 할로윈", "T03": "정확한 양쪽 날짜·한정 판매",
              "T04": "미제공 사실 없음(제목·본문·태그)", "T05": "본문 제품명으로 시작(이모지 제외)",
@@ -40,8 +42,8 @@ CRITERIA = {
 }
 GRADES = {"", "충족", "부분 충족", "미충족"}
 REVIEW_FIELDS = ("sample_id", "kind", "group", "case", *CRITERIA["text"], *CRITERIA["image"], "reason")
-SOURCE_FILES = ("model_compare.py", "app/text_ai.py", "app/image_ai.py", "app/rendering.py",
-                "app/costs.py", "app/config.py", "app/db.py", "app/schema.sql", "app/styles.py",
+SOURCE_FILES = ("model_compare.py", "analysis_compare.py", "style_pipeline_compare.py", "app/text_ai.py", "app/image_ai.py", "app/rendering.py",
+                "app/costs.py", "app/config.py", "app/db.py", "app/schema.sql", "app/styles.py", "app/analytics.py",
                 "docs/evaluation-protocol.md", "pyproject.toml")
 OWNER = "model-comparison"
 
@@ -233,8 +235,10 @@ def ledger_update(settings, record):
                      record.get("response_id"), record["call_id"]))
 
 
-def run(out, settings, client, limit=None):
+def run(out, settings, client, limit=None, *, reporter=None):
     manifest = frozen_manifest(out)
+    if manifest.get("suite") in SUITE_RUNNERS and reporter is None:
+        raise ValueError(SUITE_RUNNERS[manifest["suite"]] + "로 실행하세요")
     if manifest["dependencies"] != {name: importlib.metadata.version(name) for name in manifest["dependencies"]}:
         raise ValueError("prepare 이후 라이브러리 버전이 변경됐습니다. 새 실험을 준비하세요")
     if source_hashes() != manifest["source_sha256"]:
@@ -316,10 +320,14 @@ def run(out, settings, client, limit=None):
             record["cost_basis"] = "usage_uncached_upper_estimate" if sample["kind"] == "image" else "usage_standard_rates"
             response.raise_for_status()
             if sample["kind"] == "text":
-                draft = parse_response(body, Draft)
-                save_json(folder / "draft.json", draft.model_dump())
-                atomic_write(folder / "caption.txt", (draft.caption + "\n\n" + draft.hashtags + "\n").encode())
-                validate_draft(draft, manifest["config"]["product"])
+                result_type = RESULT_TYPES[sample.get("task", "text")]
+                result = parse_response(body, result_type)
+                if result_type is Draft:
+                    save_json(folder / "draft.json", result.model_dump())
+                    atomic_write(folder / "caption.txt", (result.caption + "\n\n" + result.hashtags + "\n").encode())
+                    validate_draft(result, manifest["config"]["product"])
+                else:
+                    save_json(folder / "output.json", result.model_dump())
                 record["state"] = "completed"
             else:
                 encoded = body["data"][0]["b64_json"]
@@ -353,12 +361,14 @@ def run(out, settings, client, limit=None):
         if record.get("cost_microusd", 0) > record.get("reserved_microusd", 0):
             print("예약 금액 초과. 청구 확인 후 settle로 정산하세요", flush=True)
             break
-    report(out)
+    (reporter or report)(out)
     return completed
 
 
-def settle(out, sample_id, amount, note, settings):
+def settle(out, sample_id, amount, note, settings, *, reporter=None):
     manifest = frozen_manifest(out)
+    if manifest.get("suite") in SUITE_RUNNERS and reporter is None:
+        raise ValueError(SUITE_RUNNERS[manifest["suite"]] + "로 정산하세요")
     sample = next(s for s in manifest["samples"] if s["id"] == sample_id)
     path = record_path(out, sample)
     record = read_json(path)
@@ -388,7 +398,7 @@ def settle(out, sample_id, amount, note, settings):
             reconcile(con, record["call_id"], reconciled, note)
             con.execute("UPDATE ai_calls SET state=? WHERE id=?", (record["state"], record["call_id"]))
     save_json(path, record)
-    report(out)
+    (reporter or report)(out)
 
 
 def budget(settings):
@@ -420,11 +430,11 @@ def settle_app_call(settings, call_id, amount, note):
         reconcile(con, call_id, microusd(dollars(amount)), note)
 
 
-def reviewed_rows(path, keys, expected, allowed=GRADES, value_column="grade", evaluator="", criteria=None):
+def reviewed_rows(path, keys, expected, allowed=GRADES, value_column="grade", evaluator="", criteria=None, fields=REVIEW_FIELDS):
     with path.open(encoding="utf-8-sig", newline="") as stream:
         reader = csv.DictReader(stream)
-        columns = set(REVIEW_FIELDS[4:-1]) if criteria else {value_column}
-        required = set(REVIEW_FIELDS) if criteria else set(keys) | columns | {"reason"}
+        columns = set(fields[4:-1]) if criteria else {value_column}
+        required = set(fields) if criteria else set(keys) | columns | {"reason"}
         if not required.issubset(reader.fieldnames or ()):
             raise ValueError("사람 판정 열이 누락됐습니다: " + path.name)
         if len(reader.fieldnames) != len(set(reader.fieldnames)):
@@ -445,8 +455,10 @@ def reviewed_rows(path, keys, expected, allowed=GRADES, value_column="grade", ev
             if row[column] not in allowed:
                 raise ValueError("판정 값이 잘못됐습니다: " + row[column])
         row["evaluator"] = row.get("evaluator", "").strip() or evaluator
-        if any(row[c] for c in selected) and (not row["reason"].strip() or not row["evaluator"]):
-            raise ValueError("판정에는 이유와 사람 평가자 이름이 필요합니다")
+        if any(row[c] for c in selected) and not row["evaluator"]:
+            raise ValueError("판정에는 사람 평가자 이름이 필요합니다")
+        if any(row[c] not in {"", "충족"} for c in selected) and not row["reason"].strip():
+            raise ValueError("부분 충족·미충족 또는 A/B 선호 판정에는 이유가 필요합니다: " + str(key))
         result[key] = row
     if set(result) != expected:
         raise ValueError("사람 판정 행이 누락됐습니다")
@@ -590,7 +602,7 @@ def report(out):
         consistency = (bundles[(kind, group)]["grade"] or "미평가") if len(selected) == 5 else "탐색: 5개 미만으로 판정 대상 아님"
         sections.append(f'<section><h2>{"문구" if kind == "text" else "이미지"} 그룹 {group}</h2><p>묶음 일관성: {esc(consistency)}</p><div class="row">{"".join(cards)}</div></section>')
     definitions = "".join(f'<li>{key}: {esc(value)}</li>' for criteria in CRITERIA.values() for key, value in criteria.items())
-    page = '<!doctype html><html lang="ko"><meta charset="utf-8"><title>스푸키쿠키 사람 검증</title><style>body{font:16px system-ui;margin:24px;background:#f8f4ee;color:#39291f}h1,h2{color:#76472e}.row{display:flex;gap:16px;overflow-x:auto}article{flex:0 0 260px;padding:16px;background:white;border-radius:12px}img{width:100%;height:auto}pre{white-space:pre-wrap;font:inherit}small{line-height:1.7}section{margin:32px 0}</style><h1>스푸키쿠키 사람 검증</h1><p>모델명·비용은 가려져 있습니다. 최종 비교에서는 같은 그룹의 5개를 나란히 보고, 개별 품질과 묶음 일관성을 별도로 평가하세요. 부분 충족은 불합격입니다.</p><p>' + esc(scope) + '</p><p>메인 상품: 큰 원형 스탠드 앞줄 오른쪽, 중앙에 가까운 쿠키 한 개. 다른 쿠키는 제거해야 합니다. 생성 원본과 4:5 미리보기를 모두 확인하세요.</p><p>reviews.csv는 결과당 한 행입니다. 문구 행의 T01~T09 또는 이미지 행의 H01~H04에 등급을 적고, 다른 영역은 비워 두세요. reason은 결과당 한 번만 씁니다. 공통 평가자는 evaluator.txt의 이름을 사용하며 기본값은 본인입니다. 세부 판정은 최종 비교 기준 총 130개입니다.</p><details><summary>판정 기준</summary><ul>' + definitions + '</ul><p><a href="protocol.md">고정한 전체 평가 기준</a></p><p>bundles.csv: 5개 묶음 일관성 / preferences.csv: A 우세·비슷함·B 우세와 이유. 판정을 저장한 후 report를 다시 실행하세요. 생성 당시 protocol.md의 기준은 유지하고 입력은 위 형식을 따릅니다.</p></details>' + ''.join(sections) + '</html>'
+    page = '<!doctype html><html lang="ko"><meta charset="utf-8"><title>스푸키쿠키 사람 검증</title><style>body{font:16px system-ui;margin:24px;background:#f8f4ee;color:#39291f}h1,h2{color:#76472e}.row{display:flex;gap:16px;overflow-x:auto}article{flex:0 0 260px;padding:16px;background:white;border-radius:12px}img{width:100%;height:auto}pre{white-space:pre-wrap;font:inherit}small{line-height:1.7}section{margin:32px 0}</style><h1>스푸키쿠키 사람 검증</h1><p>모델명·비용은 가려져 있습니다. 최종 비교에서는 같은 그룹의 5개를 나란히 보고, 개별 품질과 묶음 일관성을 별도로 평가하세요. 부분 충족은 불합격입니다.</p><p>' + esc(scope) + '</p><p>메인 상품: 큰 원형 스탠드 앞줄 오른쪽, 중앙에 가까운 쿠키 한 개. 다른 쿠키는 제거해야 합니다. 생성 원본과 4:5 미리보기를 모두 확인하세요.</p><p>reviews.csv는 결과당 한 행입니다. 문구 행의 T01~T09 또는 이미지 행의 H01~H04에 등급을 적고, 다른 영역은 비워 두세요. 충족은 reason을 생략할 수 있고, 부분 충족·미충족이 있으면 결과당 한 번 이유를 씁니다. A/B 선호 판정에는 이유가 필요합니다. 공통 평가자는 evaluator.txt의 이름을 사용하며 기본값은 본인입니다. 세부 판정은 최종 비교 기준 총 130개입니다.</p><details><summary>판정 기준</summary><ul>' + definitions + '</ul><p><a href="protocol.md">고정한 전체 평가 기준</a></p><p>bundles.csv: 5개 묶음 일관성 / preferences.csv: A 우세·비슷함·B 우세와 이유. 판정을 저장한 후 report를 다시 실행하세요. 생성 당시 protocol.md의 기준은 유지하고 입력은 위 형식을 따릅니다.</p></details>' + ''.join(sections) + '</html>'
     atomic_write(out / "review.html", page.encode())
     return summary
 

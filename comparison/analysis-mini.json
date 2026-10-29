@@ -1,0 +1,37 @@
+{
+  "price_snapshot_date": "2026-10-29",
+  "price_sources": ["https://developers.openai.com/api/docs/models/gpt-5.4-mini", "https://developers.openai.com/api/docs/models/gpt-5.4"],
+  "shop_description": "대구 카페 codeit. 아인슈페너·구움과자 맛집.",
+  "example_caption": "스푸키쿠키 👻\n\n할로윈 분위기를 담은 쿠키를 만나보세요.\n\n10월 26일부터 11월 6일까지 한정 판매합니다.",
+  "style_cases": [
+    {"id": "style-original", "label": "원본 사진", "file": "inputs/cafenew3-original.jpg", "provenance": "실제 제공 사진 + 사실에 맞춰 구성한 합성 예시 캡션"},
+    {"id": "style-angle-higher", "label": "높은 각도 사진", "file": "inputs/cafenew3-angle-higher.png", "provenance": "각도 변형 합성 사진 + 합성 예시 캡션"},
+    {"id": "style-angle-left", "label": "왼쪽 각도 사진", "file": "inputs/cafenew3-angle-left.png", "provenance": "각도 변형 합성 사진 + 합성 예시 캡션"},
+    {"id": "style-light-cool", "label": "밝고 차가운 조명 사진", "file": "inputs/cafenew3-light-bright-cool.png", "provenance": "조명 변형 합성 사진 + 합성 예시 캡션"},
+    {"id": "style-light-warm", "label": "어둡고 따뜻한 조명 사진", "file": "inputs/cafenew3-light-dim-warm.png", "provenance": "조명 변형 합성 사진 + 합성 예시 캡션"}
+  ],
+  "recommendation_cases": [
+    {"id": "recommend-rates", "label": "저장 건수와 저장률의 방향 차이", "rows": [
+      {"id": "a", "reach": 1000, "saved": 20, "shares": 5}, {"id": "b", "reach": 200, "saved": 10, "shares": 2}
+    ]},
+    {"id": "recommend-tie", "label": "관측 비율이 같은 상황", "rows": [
+      {"id": "a", "reach": 100, "saved": 2, "shares": 1}, {"id": "b", "reach": 1000, "saved": 20, "shares": 10}
+    ]},
+    {"id": "recommend-missing", "label": "실제 0과 공유 지표 결측", "rows": [
+      {"id": "a", "reach": 100, "saved": 0, "shares": null}, {"id": "b", "reach": 100, "saved": 2, "shares": 0}
+    ]},
+    {"id": "recommend-time", "label": "게시 시각 차이를 인과로 단정하지 않기", "rows": [
+      {"id": "a", "reach": 100, "saved": 3, "shares": 1, "utc_hour": 0}, {"id": "b", "reach": 100, "saved": 6, "shares": 1, "utc_hour": 9}
+    ]},
+    {"id": "recommend-purposes", "label": "다른 목적의 비교 묶음", "rows": [
+      {"id": "a", "reach": 100, "saved": 4, "shares": 1, "purpose": "상품 소개"},
+      {"id": "b", "reach": 100, "saved": 2, "shares": 2, "purpose": "상품 소개"},
+      {"id": "c", "reach": 200, "saved": 3, "shares": 1, "purpose": "가게 소개"},
+      {"id": "d", "reach": 100, "saved": 3, "shares": 1, "purpose": "가게 소개"}
+    ]}
+  ],
+  "models": {
+    "gpt-5.4-mini": {"max_output_tokens": 2048, "reasoning_effort": "none", "rates_per_million_usd": {"input": "0.75", "cached_input": "0.075", "output": "4.50"}},
+    "gpt-5.4": {"max_output_tokens": 2048, "reasoning_effort": "none", "rates_per_million_usd": {"input": "2.50", "cached_input": "0.25", "output": "15.00"}}
+  }
+}

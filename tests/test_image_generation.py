@@ -289,7 +289,8 @@ def test_text_and_image_share_one_budget(app, client, csrf, new_post, settings):
     enable_image(settings, "0.20")
     app.state.image_ai.queue("local-owner", identifier, 1)
     settings.openai_enabled = True
-    settings.input_ceiling_rate, settings.output_rate = Decimal("12.5"), Decimal("50")
+    settings.input_ceiling_rate = settings.draft_input_ceiling_rate = Decimal("12.5")
+    settings.output_rate = settings.draft_output_rate = Decimal("50")
     calls = []
 
     def handler(request):

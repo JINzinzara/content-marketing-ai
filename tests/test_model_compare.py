@@ -214,6 +214,7 @@ def test_monetary_rates_cache_unknown_and_long_context():
 def test_missing_human_rows_or_reason_cannot_become_pass(experiment):
     out, _, _, _ = experiment
     rows = fill_reviews(out)
+    rows[0][next(iter(mc.CRITERIA[rows[0]["kind"]]))] = "부분 충족"
     rows[0]["reason"] = ""
     mc.write_csv(out / "reviews.csv", rows, tuple(rows[0]))
     with pytest.raises(ValueError, match="이유"):
@@ -223,6 +224,41 @@ def test_missing_human_rows_or_reason_cannot_become_pass(experiment):
     rows[0]["reason"] = "확인"
     mc.write_csv(out / "reviews.csv", rows, tuple(rows[0]))
     with pytest.raises(ValueError, match="누락"):
+        mc.report(out)
+
+
+def test_fulfilled_reviews_and_bundles_allow_empty_reason_without_filling_it(experiment):
+    out, _, _, _ = experiment
+    rows = fill_reviews(out)
+    for row in rows:
+        row["reason"] = ""
+    mc.write_csv(out / "reviews.csv", rows, tuple(rows[0]))
+    with (out / "bundles.csv").open(encoding="utf-8-sig", newline="") as stream:
+        bundles = list(csv.DictReader(stream))
+    for row in bundles:
+        row["grade"] = "충족"
+    mc.write_csv(out / "bundles.csv", bundles, tuple(bundles[0]))
+    before = {p: p.read_bytes() for p in out.glob("*.csv") if p.name != "summary.csv"}
+    mc.report(out)
+    results = mc.read_json(out / "results.json")
+    assert all(not r["reason"] for r in results["human_reviews"] + results["human_bundles"])
+    assert all(p.read_bytes() == raw for p, raw in before.items())
+
+
+@pytest.mark.parametrize("name,column,grade", [
+    ("bundles.csv", "grade", "부분 충족"),
+    ("bundles.csv", "grade", "미충족"),
+    ("preferences.csv", "preference", "A 우세"),
+    ("preferences.csv", "preference", "비슷함"),
+    ("preferences.csv", "preference", "B 우세"),
+])
+def test_adverse_bundle_and_all_preferences_still_require_reason(experiment, name, column, grade):
+    out, _, _, _ = experiment
+    with (out / name).open(encoding="utf-8-sig", newline="") as stream:
+        rows = list(csv.DictReader(stream))
+    rows[0][column] = grade
+    mc.write_csv(out / name, rows, tuple(rows[0]))
+    with pytest.raises(ValueError, match="이유"):
         mc.report(out)
 
 

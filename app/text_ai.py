@@ -1,8 +1,9 @@
-"""GPT-5.4로 스타일·광고 문구·추천을 생성하고 사실과 구조를 검증"""
+"""문구는 GPT-5.4 Mini, 스타일·추천은 별도 모델로 생성하고 사실과 구조를 검증"""
 
 import base64
 import json
 import re
+from dataclasses import replace
 from decimal import Decimal, ROUND_CEILING
 
 import httpx
@@ -173,7 +174,13 @@ class TextAI:
             raise HTTPException(
                 503, "텍스트 AI 설정이 필요합니다.\n" + "\n".join(cfg.ai_missing)
             )
+        if purpose == "draft":
+            cfg = replace(cfg, openai_model=cfg.draft_model,
+                          input_ceiling_rate=cfg.draft_input_ceiling_rate,
+                          output_rate=cfg.draft_output_rate)
         base = response_payload(cfg.openai_model, data, result_type, images)
+        if purpose == "draft":
+            base["reasoning"] = {"effort": "none"}
         # 비용 계산에는 이미지와 출력 형태까지 동일한 요청 사용
         with connect(cfg) as con:
             self._check_allowance(con, owner_id, post_id)
@@ -192,7 +199,8 @@ class TextAI:
             )
         result = self._json(
             "responses",
-            {**base, "max_output_tokens": cfg.max_output_tokens, "store": False},
+            {**base, "max_output_tokens": cfg.max_output_tokens, "store": False,
+             **({"service_tier": "default"} if purpose == "draft" else {})},
         )
         usage = result.get("usage") or {}
         incoming, outgoing = usage.get("input_tokens"), usage.get("output_tokens")
