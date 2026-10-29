@@ -18,11 +18,12 @@ dependencies = [
 test = ["pytest>=9,<10"]
 
 [tool.setuptools]
-packages = ["app"]
+packages = ["backend", "frontend"]
 
 [tool.setuptools.package-data]
-app = ["schema.sql", "templates/*.html", "static/*", "assets/fonts/*"]
+backend = ["schema.sql", "comparison/*.json"]
+frontend = ["templates/*.html", "static/*", "assets/fonts/*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["backend/tests", "frontend/tests"]
 pythonpath = ["."]

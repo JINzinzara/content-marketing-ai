@@ -8,6 +8,34 @@
 
 [프로젝트 현황](https://app.notion.com/p/3fec6fc0469681c79cd3fccbf5dc13a7) · [서비스 계획서](https://app.notion.com/p/3fec6fc046968187be31fb2eed306e5b) · [평가 결과](https://app.notion.com/p/406c6fc046968118b96be2f078981f17) · [개발일지](https://app.notion.com/p/3fec6fc0469681a8a6a8d8f8d4820a29)
 
+## 폴더 구조
+
+```text
+backend/                 서버·모델·데이터베이스 처리
+  main.py                앱 실행 지점
+  db.py, schema.sql      DB 연결·초기화·스키마
+  text_ai.py, image_ai.py
+  *_compare.py           모델 비교·평가·정산 실행기
+  comparison/            비교 설정·비공개 입력·실험 기록
+  tests/                 서버·모델 검증
+frontend/                사용자 화면
+  templates/             HTML 템플릿
+  static/                CSS·JavaScript·캐릭터
+  assets/fonts/          글꼴·라이선스
+  tests/                 브라우저 로직 검증
+data/                    운영 DB·원본·후보·완성본 (기존 위치 유지)
+README.md
+pyproject.toml
+```
+
+화면과 서버는 기존 하나의 앱으로 실행합니다. 정적 자료 주소 `/static/`·`/fonts/`는 유지합니다. `frontend/__init__.py`는 설치 패키지에 화면 자료를 함께 포함하기 위한 표식입니다. 기존 설치 환경은 폴더 이동 후 다음 명령으로 패키지 경로를 갱신합니다.
+
+```bash
+.venv/bin/python -m pip install --no-deps -e .
+```
+
+기존 비교 기록은 내용·사람 판정·비용을 수정하지 않고 `backend/comparison/`으로 옮깁니다. 이미 완료한 실험의 report·정산은 새 폴더 경로를 사용합니다. 고정 명세의 과거 소스 경로는 당시 기록으로 보존하며, 새 유료 비교는 현재 코드로 새 폴더를 prepare합니다.
+
 ## 실행
 
 Python 3.12 이상이 필요합니다. 기존 비공개 `.env`와 `data/`를 보존합니다. 새 설치는 유료 AI가 기본 비활성화입니다.
@@ -16,7 +44,7 @@ Python 3.12 이상이 필요합니다. 기존 비공개 `.env`와 `data/`를 보
 cd /Users/limhyunjin/Desktop/content-marketing-ai
 python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[test]'
-.venv/bin/python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8765 --workers 1 --no-access-log
+.venv/bin/python -m uvicorn backend.main:create_app --factory --host 127.0.0.1 --port 8765 --workers 1 --no-access-log
 ```
 
 기존 `.venv`가 있으면 환경 생성·설치를 생략합니다. 브라우저에서 <http://127.0.0.1:8765>를 엽니다. 포트가 사용 중이면 진행 중인 생성·게시 작업을 확인한 뒤 기존 서버 터미널에서 Ctrl+C로 종료하고 다시 실행합니다. 중복 서버를 만들지 않습니다.
@@ -24,7 +52,7 @@ python3 -m venv .venv
 Instagram에는 전문 계정·앱 권한·공개 HTTPS가 필요합니다. `.env`의 `PUBLIC_BASE_URL`·`INSTAGRAM_REDIRECT_URI`와 Meta 콜백을 현재 주소로 맞춥니다. Cloudflare 등 공개 연결은 별도 터미널에서 유지합니다.
 
 ```bash
-APP_ENV=production .venv/bin/python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8765 --workers 1 --proxy-headers --forwarded-allow-ips 127.0.0.1 --no-access-log
+APP_ENV=production .venv/bin/python -m uvicorn backend.main:create_app --factory --host 127.0.0.1 --port 8765 --workers 1 --proxy-headers --forwarded-allow-ips 127.0.0.1 --no-access-log
 ```
 
 `production`은 공개 실행 설정이며 외부 고객 대상 앱 심사 완료를 뜻하지 않습니다. 키·토큰·사진·평가 원본은 Git이나 Notion에 붙여 넣지 않습니다.
@@ -240,34 +268,34 @@ AI가 작성한 사전 검수를 사람 판정으로 등록하지 않는다.
 
 ## 비교 실행 순서
 
-`prepare`·기본 `run`·`report`는 유료 생성이 없습니다. **`run --execute`만 유료 API를 호출합니다.** 실제 게시·프로필 확정·제작권 차감은 하지 않습니다. 새 컴퓨터에는 비공개 `comparison/inputs/` 사진과 고정 인스타 자료를 별도로 복사합니다.
+`prepare`·기본 `run`·`report`는 유료 생성이 없습니다. **`run --execute`만 유료 API를 호출합니다.** 실제 게시·프로필 확정·제작권 차감은 하지 않습니다. 새 컴퓨터에는 비공개 `backend/comparison/inputs/` 사진과 고정 인스타 자료를 별도로 복사합니다.
 
-모델 4개×입력 5장=20건이며 같은 사진을 5회 반복하는 시험이 아닙니다. 탐색은 자유지만 최종 프롬프트·단가·설정·첫 시도 규칙을 고정합니다. 실패·거절·불명도 남기며 좋은 결과로 대체하지 않습니다. 설정은 `comparison/spooky-cookie.json`입니다. 기존 폴더를 덮어쓰지 않고 새 이름으로 준비합니다.
+모델 4개×입력 5장=20건이며 같은 사진을 5회 반복하는 시험이 아닙니다. 탐색은 자유지만 최종 프롬프트·단가·설정·첫 시도 규칙을 고정합니다. 실패·거절·불명도 남기며 좋은 결과로 대체하지 않습니다. 설정은 `backend/comparison/spooky-cookie.json`입니다. 기존 폴더를 덮어쓰지 않고 새 이름으로 준비합니다.
 
 ```bash
 .venv/bin/python -m pytest -q
 .venv/bin/python -m pip check
-.venv/bin/python model_compare.py budget
-.venv/bin/python model_compare.py prepare --phase explore --case original --out comparison/runs/explore-new-01
-.venv/bin/python model_compare.py run comparison/runs/explore-new-01
+.venv/bin/python -m backend.model_compare budget
+.venv/bin/python -m backend.model_compare prepare --phase explore --case original --out backend/comparison/runs/explore-new-01
+.venv/bin/python -m backend.model_compare run backend/comparison/runs/explore-new-01
 ```
 
 탐색 계획 4건과 유료 호출 없음이 표시됩니다. 선택한 때만 한 건을 실행하고 원본·비용·오류를 확인합니다.
 
 ```bash
-.venv/bin/python model_compare.py run comparison/runs/explore-new-01 --execute --limit 1
-.venv/bin/python model_compare.py report comparison/runs/explore-new-01
-open comparison/runs/explore-new-01/review.html
+.venv/bin/python -m backend.model_compare run backend/comparison/runs/explore-new-01 --execute --limit 1
+.venv/bin/python -m backend.model_compare report backend/comparison/runs/explore-new-01
+open backend/comparison/runs/explore-new-01/review.html
 ```
 
 탐색은 최종 결과에 섞지 않습니다. 최종 비교는 텍스트 `none`·최대 2048토큰·표준 등급, 이미지 `low`·1024×1024로 실행했습니다. 새 실행 전 지원 모델·단가·설정을 확인합니다.
 
 ```bash
-.venv/bin/python model_compare.py prepare --phase final --out comparison/runs/final-new-01
-.venv/bin/python model_compare.py run comparison/runs/final-new-01
-.venv/bin/python model_compare.py run comparison/runs/final-new-01 --execute --limit 1
-.venv/bin/python model_compare.py run comparison/runs/final-new-01 --execute
-open comparison/runs/final-new-01/review.html
+.venv/bin/python -m backend.model_compare prepare --phase final --out backend/comparison/runs/final-new-01
+.venv/bin/python -m backend.model_compare run backend/comparison/runs/final-new-01
+.venv/bin/python -m backend.model_compare run backend/comparison/runs/final-new-01 --execute --limit 1
+.venv/bin/python -m backend.model_compare run backend/comparison/runs/final-new-01 --execute
+open backend/comparison/runs/final-new-01/review.html
 ```
 
 20건 준비 후 기본 run은 남은 계획만 출력합니다. 같은 폴더 중복 실행은 잠그고 기록이 없는 슬롯만 처리합니다. 실패·거절·완료 슬롯을 자동 재시도하지 않습니다. 코드·라이브러리·고정 자료가 바뀌면 유료 실행을 거절하므로 새 폴더로 준비합니다. 기존 기록의 오프라인 집계와 정산은 가능합니다.
@@ -275,11 +303,11 @@ open comparison/runs/final-new-01/review.html
 인스타 스타일 비교는 같은 사진·캡션 8개의 순서·해시를 고정한 `reference-set.json`이 필요합니다. 이전 확정 분석은 감사 기록에만 남기고 두 후보 모두 동일 자료로 새로 분석합니다. 분석이 완성돼야 후속 20건을 고정하며 실제 프로필을 바꾸지 않습니다.
 
 ```bash
-.venv/bin/python style_pipeline_compare.py prepare --references '<reference-set.json의 실제 경로>' --out comparison/runs/instagram-style-new-01
-.venv/bin/python style_pipeline_compare.py run comparison/runs/instagram-style-new-01
-.venv/bin/python style_pipeline_compare.py run comparison/runs/instagram-style-new-01 --execute
-open comparison/runs/instagram-style-new-01/review.html
-.venv/bin/python style_pipeline_compare.py report comparison/runs/instagram-style-new-01
+.venv/bin/python -m backend.style_pipeline_compare prepare --references '<reference-set.json의 실제 경로>' --out backend/comparison/runs/instagram-style-new-01
+.venv/bin/python -m backend.style_pipeline_compare run backend/comparison/runs/instagram-style-new-01
+.venv/bin/python -m backend.style_pipeline_compare run backend/comparison/runs/instagram-style-new-01 --execute
+open backend/comparison/runs/instagram-style-new-01/review.html
+.venv/bin/python -m backend.style_pipeline_compare report backend/comparison/runs/instagram-style-new-01
 ```
 
 ### 판정과 집계
@@ -293,8 +321,8 @@ UTF-8 CSV의 ID·행을 유지합니다. `evaluator.txt`의 기본값 `본인`�
 충족은 이유 생략 가능, 부분 충족·미충족이 하나라도 있으면 결과당 한 번 `T03: 종료일 오류`처럼 자연어로 적습니다. 선호는 모든 판정에 이유가 필요합니다. 탐색 5개 미만은 묶음을 미평가로 둡니다. 이전 기준당 한 행 CSV는 report가 `.legacy.csv`에 원본을 남기고 변환하며 여러 평가자를 임의 통합하지 않습니다.
 
 ```bash
-.venv/bin/python model_compare.py report comparison/runs/final-new-01
-open comparison/runs/final-new-01/summary.csv
+.venv/bin/python -m backend.model_compare report backend/comparison/runs/final-new-01
+open backend/comparison/runs/final-new-01/summary.csv
 ```
 
 미평가·실패·미전송과 개별 합격·묶음을 구분합니다. 모델명이 있는 summary는 사람 검토 후 엽니다.
@@ -308,10 +336,10 @@ open comparison/runs/final-new-01/summary.csv
 추정·상한 추정·청구 확인 정산·혼합·미확정을 구분하며 예약금이나 결측을 확정 비용·0원으로 바꾸지 않습니다. 실제 청구 내역을 확인한 뒤 아래처럼 정산하고 전후 기록을 보존합니다. 재생성하지 않습니다.
 
 ```bash
-.venv/bin/python model_compare.py budget
-.venv/bin/python model_compare.py settle-call --call-id '<앱 요청 ID>' --cost-usd '<확인 금액>' --note '청구 확인 근거'
-.venv/bin/python model_compare.py settle comparison/runs/final-new-01 --sample '<실제 ID>' --cost-usd '<확인 금액>' --note '청구 확인 근거'
-.venv/bin/python style_pipeline_compare.py settle comparison/runs/instagram-style-new-01 --stage styles --sample '<실제 ID>' --cost-usd '<확인 금액>' --note '청구 확인 근거'
+.venv/bin/python -m backend.model_compare budget
+.venv/bin/python -m backend.model_compare settle-call --call-id '<앱 요청 ID>' --cost-usd '<확인 금액>' --note '청구 확인 근거'
+.venv/bin/python -m backend.model_compare settle backend/comparison/runs/final-new-01 --sample '<실제 ID>' --cost-usd '<확인 금액>' --note '청구 확인 근거'
+.venv/bin/python -m backend.style_pipeline_compare settle backend/comparison/runs/instagram-style-new-01 --stage styles --sample '<실제 ID>' --cost-usd '<확인 금액>' --note '청구 확인 근거'
 ```
 
 스타일 후속 생성 정산은 `--stage content`입니다.
@@ -320,7 +348,7 @@ open comparison/runs/final-new-01/summary.csv
 
 `analysis-mini-01`은 새 상품 사진으로 스타일을 분석한 잘못된 설계여서 인스타 스타일 모델 선정 근거에서 제외합니다. 합성 지표 추천 사례도 실제 반응·매출 증거가 아닙니다. 원본·비용은 보존하고 새 결과에 섞지 않습니다.
 
-`analysis_compare.py`는 올바른 스타일 실행기의 공통 집계·잠금과 기존 정산에 쓰이므로 유지합니다. 이전 탐색은 사진 5개·합성 지표 5상황×텍스트 모델 2개로 20건입니다. 사람은 자료 일치·근거 연결·단정 억제·활용 가능의 네 기준을 판정하며 부분 충족은 불합격입니다. 내용이 달라야 하는 사례이므로 묶음 일관성은 평가하지 않습니다. 재실행은 `analysis_compare.py prepare --out <새 폴더>`, `run <폴더> [--execute]`, `report <폴더>`, `settle <폴더> --sample ... --cost-usd ... --note ...`입니다. 현재 앱의 유료 추천 기능을 뜻하지 않습니다.
+`backend/analysis_compare.py`는 올바른 스타일 실행기의 공통 집계·잠금과 기존 정산에 쓰이므로 유지합니다. 이전 탐색은 사진 5개·합성 지표 5상황×텍스트 모델 2개로 20건입니다. 사람은 자료 일치·근거 연결·단정 억제·활용 가능의 네 기준을 판정하며 부분 충족은 불합격입니다. 내용이 달라야 하는 사례이므로 묶음 일관성은 평가하지 않습니다. 재실행은 `python -m backend.analysis_compare prepare --out <새 폴더>`, `run <폴더> [--execute]`, `report <폴더>`, `settle <폴더> --sample ... --cost-usd ... --note ...`입니다. 현재 앱의 유료 추천 기능을 뜻하지 않습니다.
 
 ## 검증·보관·남은 작업
 
@@ -332,11 +360,11 @@ git diff --check
 
 시험은 임시 DB·모의 HTTP로 실행하며 실제 유료 API·Instagram 게시를 하지 않습니다. 브라우저 로직 시험은 Node.js가 있으면 실행하고 없으면 두 검사를 건너뜁니다. 기존 테스트 클라이언트의 httpx 폐기 예정 경고는 남습니다.
 
-- `app/`: 화면·AI·제작·게시·메뉴·반응·비용·저장.
-- `tests/`: 앱과 비교 실행기의 회귀 검사.
-- `comparison/*.json`: 공개 비교 설정. inputs/runs는 비공개·Git 제외.
+- `backend/`: 서버·AI·제작·게시·메뉴·반응·비용·DB 코드와 스키마. 모델 비교 실행기도 포함합니다.
+- `backend/tests/`: 서버·모델 비교 회귀 검사. `frontend/tests/`: 브라우저 로직 검사.
+- `backend/comparison/*.json`: 공개 비교 설정. inputs/runs는 비공개·Git 제외.
 - `data/`: 원본·후보·완성본·DB·비용 원장·연결 키. 비공개·Git 제외.
-- `app/assets/fonts/`, `app/static/`: 글꼴·캐릭터·라이선스. 사용에 필요한 라이선스는 보존.
+- `frontend/assets/fonts/`, `frontend/static/`: 글꼴·캐릭터·라이선스. 사용에 필요한 라이선스는 보존.
 
 초기화는 새 열·테이블을 추가하며 기존 기록을 지우지 않습니다. 롤백 전 대기 예약을 취소하고 서버를 멈춘 뒤 DB·파일의 일관된 백업·이관 범위를 확인합니다. 새 공지·스토리를 이전 코드가 처리하지 못하므로 **소스만 되돌리는 롤백을 안전하다고 보장하지 않습니다**.
 

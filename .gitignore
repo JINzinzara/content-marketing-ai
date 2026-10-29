@@ -3,10 +3,9 @@
 .env.*
 !.env.example
 /data/
-/models/
-/assets/
-/comparison/inputs/
-/comparison/runs/
+/backend/models/
+/backend/comparison/inputs/
+/backend/comparison/runs/
 *.sqlite3
 *.sqlite3-*
 
