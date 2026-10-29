@@ -126,6 +126,10 @@ class ImageAI:
             for identifier in style.get("reference_ids", [])[:1]:
                 reference_data(cfg, con, owner_id, identifier, include_image=False, skip_deleted=True)
             prompt = edit_prompt(post["product_name"], style)
+            from .briefings import guidance
+            idea = guidance(con, post)
+            if idea:
+                prompt += "\n이번 초안에 사용자가 선택한 표현 아이디어(상품 사실·보존·고정 스타일을 우선하고 충돌하면 생략): " + json.dumps({"next_content": idea.get("next_content", "")}, ensure_ascii=False)
             call_id = reserve(
                 con,
                 cfg,

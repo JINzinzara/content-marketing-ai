@@ -50,6 +50,7 @@ INSTRUCTIONS = """너는 작은 베이커리 카페의 Instagram 콘텐츠 제�
 - 고정 브랜드 규칙과 이번 선택을 이미 조합한 속성을 따르며 임의 혼합 비율을 만들지 않는다.
 - 반응과 게시 시각의 차이는 관찰이다. 최적 시간이나 매출 증가·인과 효과를 주장하지 않는다.
 - 표본과 비교 조건이 부족하면 결론을 내리지 않고 다음에 시험할 가설을 제안한다.
+- 이번 초안의 선택적 추천은 표현 아이디어다. 상품 사실·가격·기간·고정 스타일보다 우선하지 않는다. 추천을 새로운 상품 사실로 취급하거나 게시 시간을 자동 변경하지 않는다.
 """
 
 
@@ -259,6 +260,8 @@ class TextAI:
         """확인한 상품과 스타일로 Draft 반환"""
         with connect(self.settings) as con:
             editable_post(con, owner_id, post_id)
+            from .briefings import guidance
+            recommendation = guidance(con, post)
         facts = {
             k: post[k] for k in ("product_name", "facts", "price", "period", "purpose")
         }
@@ -281,6 +284,7 @@ class TextAI:
             "draft",
             {
                 "task": "confirmed_product_only",
+                "optional_idea_for_this_draft": recommendation,
                 "shop": shop["name"],
                 "confirmed_style": shop["style"],
                 "resolved_visual_style": style,

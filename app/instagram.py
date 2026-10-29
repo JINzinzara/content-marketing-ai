@@ -287,6 +287,7 @@ class Instagram:
                         "media_product_type",
                         "content_kind",
                         "revision",
+                        "recommendation_id",
                     )
                 }
                 con.execute(

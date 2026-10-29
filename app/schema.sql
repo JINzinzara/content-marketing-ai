@@ -119,3 +119,33 @@ CREATE TABLE IF NOT EXISTS publish_schedules (
     revision INTEGER NOT NULL, due_at TEXT NOT NULL, state TEXT NOT NULL,
     message TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS briefing_settings (
+    owner_id TEXT PRIMARY KEY REFERENCES accounts(id), mode TEXT NOT NULL,
+    weekdays TEXT NOT NULL DEFAULT '[]', dates TEXT NOT NULL DEFAULT '[]',
+    local_time TEXT NOT NULL, enabled_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS briefing_runs (
+    id INTEGER PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES accounts(id),
+    scheduled_for TEXT NOT NULL, created_at TEXT NOT NULL, state TEXT NOT NULL,
+    evidence_hash TEXT NOT NULL DEFAULT '', content TEXT NOT NULL DEFAULT '{}',
+    message TEXT NOT NULL DEFAULT '', UNIQUE(owner_id, scheduled_for)
+);
+CREATE TABLE IF NOT EXISTS recommendation_events (
+    id INTEGER PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES accounts(id),
+    recommendation_id INTEGER NOT NULL REFERENCES recommendations(id),
+    action TEXT NOT NULL CHECK(action IN ('shown','applied','ignored')),
+    post_id TEXT NOT NULL DEFAULT '', revision INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    UNIQUE(owner_id, recommendation_id, action, post_id, revision)
+);
+
+CREATE TABLE IF NOT EXISTS metric_collection_jobs (
+    owner_id TEXT NOT NULL REFERENCES accounts(id), media_id TEXT NOT NULL,
+    state TEXT NOT NULL, attempted_at TEXT NOT NULL, message TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY(owner_id, media_id)
+);
+
+CREATE TABLE IF NOT EXISTS analytics_sync_state (
+    owner_id TEXT PRIMARY KEY REFERENCES accounts(id), next_cursor TEXT NOT NULL DEFAULT '',
+    synced_at TEXT NOT NULL
+);

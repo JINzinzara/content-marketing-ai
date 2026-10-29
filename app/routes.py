@@ -12,8 +12,8 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Resp
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.datastructures import UploadFile
 
-from . import analytics, styles, production
-from .text_ai import Recommendation, Style
+from . import analytics, styles, production, briefings
+from .text_ai import Style
 from .auth import consume_oauth_state, csrf_token, form_data, owner, authorization_url
 from .credits import finalize
 from .db import account, balance, connect, owned_post, editable_post
@@ -94,7 +94,6 @@ def save_draft(settings, owner_id, post, result):
             "UPDATE posts SET title=?, caption=?, hashtags=?, layout='split', source='ai', revision=revision+1 WHERE id=?",
             (result.title, caption, hashtags, post["id"]),
         )
-
 
 
 def page(request, template, owner_id=None, **context):
@@ -440,14 +439,32 @@ def delete_reference(request: Request, reference_id: str, who: Owner, form: Form
 
 
 @router.get("/posts/new")
-def new_view(request: Request, who: Owner):
-    return page(request, "new.html", who, presets=styles.PRESETS)
+def new_view(request: Request, who: Owner, recommendation_id: int = 0):
+    idea = None
+    if recommendation_id:
+        if not 0 < recommendation_id <= 2**63-1:
+            raise HTTPException(404, "추천을 찾을 수 없어요")
+        with connect(request.app.state.settings, write=True) as con:
+            row = briefings.record_event(con, who, recommendation_id, "shown")
+            idea = json.loads(row["content"])
+    return page(request, "new.html", who, presets=styles.PRESETS, recommendation_id=recommendation_id,
+                recommendation=idea, recommended_purpose=next((key for key,value in analytics.PURPOSES.items() if idea and value == idea.get("purpose")), "신메뉴 안내"))
 
 
 @router.post("/posts")
 def create_post(request: Request, who: Owner, form: Form):
     cfg = request.app.state.settings
     item = validated(ProductInput, form)
+    try:
+        recommendation_id = int(form.get("recommendation_id", "0"))
+        if not 0 <= recommendation_id <= 2**63-1:
+            raise ValueError
+    except (ValueError, TypeError):
+        raise HTTPException(422, "추천 정보를 다시 확인해주세요") from None
+    if recommendation_id:
+        with connect(cfg) as con:
+            if not con.execute("SELECT 1 FROM recommendations WHERE id=? AND owner_id=?", (recommendation_id, who)).fetchone():
+                raise HTTPException(404, "추천을 찾을 수 없어요")
     measurement_id = str(form.get("measurement_id", ""))
     if measurement_id and not re.fullmatch(r"[a-f0-9]{32}", measurement_id):
         raise HTTPException(422, "제작 시간 식별자를 확인해주세요")
@@ -481,8 +498,8 @@ def create_post(request: Request, who: Owner, form: Form):
             )
             con.execute(
                 """INSERT INTO posts(id, owner_id, product_name, facts, price, period, purpose, original_file,
-                title, caption, layout, aspect, color, created_at, style_snapshot, show_price, creation_measurement_id) VALUES
-                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                title, caption, layout, aspect, color, created_at, style_snapshot, show_price, creation_measurement_id, recommendation_id) VALUES
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     post_id,
                     who,
@@ -501,8 +518,11 @@ def create_post(request: Request, who: Owner, form: Form):
                     snapshot,
                     item.show_price,
                     measurement_id,
+                    recommendation_id or None,
                 ),
             )
+            if recommendation_id:
+                briefings.record_event(con, who, recommendation_id, "applied", post_id, 1)
     except BaseException:
         (cfg.data_dir / "originals" / original_file).unlink(missing_ok=True)
         raise
@@ -548,6 +568,7 @@ def post_view(request: Request, post_id: str, who: Owner):
         "post.html",
         who,
         post=post,
+        recommendation_guidance=briefings.guidance_for_post(request.app.state.settings, post),
         measurement=production.report(request.app.state.settings, who, post_id),
         timing_labels=production.LABELS,
         charged=charged,
@@ -564,7 +585,6 @@ def post_view(request: Request, post_id: str, who: Owner):
             row["state"] in {"queued", "running", "unknown"} for row in images
         ),
     )
-
 
 
 @router.post("/posts/{post_id}/timings")
@@ -642,7 +662,6 @@ def choose_style(request: Request, post_id: str, who: Owner, form: Form):
         "게시물 스타일 저장 완료"
     )
     return back("/posts/" + post_id)
-
 
 
 @router.post("/posts/{post_id}/images")
@@ -727,7 +746,6 @@ def select_image(request: Request, post_id: str, who: Owner, form: Form):
     return back("/posts/" + post_id)
 
 
-
 @router.post("/posts/{post_id}/edit")
 def edit_post(request: Request, post_id: str, who: Owner, form: Form):
     caption, hashtags = caption_parts(str(form.get("caption", "")), str(form.get("hashtags", "")))
@@ -770,12 +788,11 @@ def edit_post(request: Request, post_id: str, who: Owner, form: Form):
     return back("/posts/" + post_id)
 
 
-
 @router.post("/posts/{post_id}/generate")
 def regenerate(request: Request, post_id: str, who: Owner, form: Form):
     cfg = request.app.state.settings
     with connect(cfg) as con:
-        post = owned_post(con, who, post_id)
+        post = editable_post(con, who, post_id)
     if post["publish_state"] in {
         "creating",
         "container_ready",
@@ -800,7 +817,6 @@ def preview(request: Request, post_id: str, who: Owner):
         media_type="image/jpeg",
         headers={"Cache-Control": "no-store"},
     )
-
 
 
 @router.post("/posts/{post_id}/finalize")
@@ -885,11 +901,12 @@ def sync_instagram(request: Request, who: Owner, form: Form):
     after = str(form.get("after", ""))
     if len(after) > 2000:
         raise HTTPException(422, "조회 커서가 올바르지 않습니다")
+    analytics_return = form.get("return_to") == "analytics"
     request.session["history_next"] = request.app.state.instagram.sync_history(
-        who, after, restore_deleted=True
+        who, after, restore_deleted=not analytics_return
     )
     request.session["notice"] = "게시물 가져오기 완료"
-    return back("/shop")
+    return back("/analytics" if analytics_return else "/shop")
 
 
 @router.post("/instagram/disconnect")
@@ -906,77 +923,50 @@ def disconnect_instagram(request: Request, who: Owner, form: Form):
 
 
 @router.get("/analytics")
-def analytics_view(request: Request, who: Owner):
+def analytics_view(request: Request, who: Owner, p: int = 1):
+    if p < 1 or p > 1_000_000:
+        raise HTTPException(422, "올바른 페이지를 선택해주세요")
     cfg = request.app.state.settings
-    info = analytics.report(cfg, who)
+    posts, has_more = analytics.history_page(cfg, who, p)
+    state = analytics.refresh_state(request.app, who)
     with connect(cfg) as con:
-        history = [
-            dict(row)
-            for row in con.execute(
-                "SELECT media_id, caption FROM history WHERE owner_id=? ORDER BY published_at DESC LIMIT 50",
-                (who,),
-            )
-        ]
-        recommendation = con.execute(
-            "SELECT content FROM recommendations WHERE owner_id=?  AND evidence_hash=?",
-            (who, info["evidence_hash"]),
-        ).fetchone()
-    return page(
-        request,
-        "analytics.html",
-        who,
-        report=info,
-        history=history,
-        recommendation=(
-            json.loads(recommendation["content"]) if recommendation else None
-        ),
-        metric_names=analytics.METRICS,
-        metric_statuses=analytics.STATUSES,
-        comparison_hours=cfg.comparison_hours,
-        tolerance_hours=cfg.comparison_tolerance_hours,
-    )
+        sync = con.execute("SELECT next_cursor FROM analytics_sync_state WHERE owner_id=?", (who,)).fetchone()
+    ids = [item["media_id"] for item in posts]
+    attempted = state.get("page") == p and (state.get("state") == "error" or state.get("state") == "completed" and state.get("ids") == ids)
+    auto_refresh = not attempted and state["state"] != "running" and (not posts or any(not row["metrics"] and (row["collectable"] or row["format"] == "UNKNOWN") for row in posts))
+    return page(request, "analytics.html", who, posts=posts, current_page=p, has_more=has_more,
+                has_remote_more=bool(sync and sync["next_cursor"]), refresh=state, auto_refresh=auto_refresh,
+                metric_names=analytics.METRICS)
+
+
+@router.post("/analytics/refresh")
+def refresh_analytics(request: Request, tasks: BackgroundTasks, who: Owner, form: Form):
+    try:
+        current_page = int(form.get("page", "1"))
+        if not 1 <= current_page <= 1_000_000:
+            raise ValueError
+    except (ValueError, TypeError):
+        raise HTTPException(422, "올바른 페이지를 선택해주세요") from None
+    older = form.get("older") == "yes"
+    target = analytics.queue_refresh(request.app, who, tasks, current_page, older=older)
+    if "application/json" in request.headers.get("accept", ""):
+        return JSONResponse({"state": "running", "page": target}, status_code=202)
+    return back("/analytics?p="+str(target))
+
+
+@router.get("/analytics/status")
+def analytics_status(request: Request, who: Owner):
+    state = analytics.refresh_state(request.app, who)
+    return {key: state[key] for key in ("state", "page", "message") if key in state}
 
 
 @router.post("/analytics/collect")
 def collect(request: Request, who: Owner, form: Form):
     media_id = str(form.get("media_id", ""))
+    with connect(request.app.state.settings) as con:
+        if not con.execute("SELECT 1 FROM history WHERE owner_id=? AND media_id=? AND deleted_at IS NULL", (who, media_id)).fetchone():
+            raise HTTPException(404, "본인 계정의 게시물만 분석할 수 있습니다")
     request.app.state.instagram.collect_metrics(who, media_id)
-    return back("/analytics")
-
-
-@router.post("/analytics/recommend")
-def recommend(request: Request, who: Owner, form: Form):
-    cfg = request.app.state.settings
-    info = analytics.report(cfg, who)
-    if not info["evidence"]:
-        raise HTTPException(
-            422, "분석을 위한 비교 자료가 부족합니다. 자료를 더 수집한 뒤 시도해주세요"
-        )
-    with connect(cfg) as con:
-        cached = con.execute(
-            "SELECT 1 FROM recommendations WHERE owner_id=? AND evidence_hash=?",
-            (who, info["evidence_hash"]),
-        ).fetchone()
-    if not cached:
-        result = request.app.state.ai.generate(
-            who,
-            "recommendation",
-            {
-                "observed_comparisons": info["evidence"],
-                "limitations": info["limitations"],
-            },
-            Recommendation,
-        )
-        with connect(cfg, write=True) as con:
-            con.execute(
-                "INSERT OR IGNORE INTO recommendations(owner_id, evidence_hash, content, created_at) VALUES (?, ?, ?, ?)",
-                (
-                    who,
-                    info["evidence_hash"],
-                    result.model_dump_json(),
-                    int(time.time()),
-                ),
-            )
     return back("/analytics")
 
 

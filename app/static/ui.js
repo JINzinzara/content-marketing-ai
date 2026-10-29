@@ -304,3 +304,51 @@ async function pollImageProgress() {
 document.getElementById('image-recheck')?.addEventListener('click', () => { pollStopped = false; clearTimeout(pollTimer); pollImageProgress(); });
 if (progressPanel && ['queued', 'running'].includes(progressPanel.dataset.state)) pollImageProgress();
 window.addEventListener('pagehide', () => { pollStopped = true; clearInterval(elapsedTimer); clearTimeout(pollTimer); });
+
+// 브리핑은 선택한 주기에 필요한 입력만 표시한다.
+const briefingMode = document.getElementById('briefing-mode');
+function showBriefingPeriod() {
+  if (!briefingMode) return;
+  document.querySelector('[data-schedule-options]').hidden = briefingMode.value === 'off';
+  for (const group of document.querySelectorAll('[data-period]')) group.hidden = group.dataset.period !== briefingMode.value;
+}
+briefingMode?.addEventListener('change', showBriefingPeriod);
+showBriefingPeriod();
+document.getElementById('add-briefing-date')?.addEventListener('click', () => {
+  const input = document.createElement('input');
+  input.type = 'date'; input.name = 'dates'; input.setAttribute('aria-label', '추가로 받을 날짜');
+  document.getElementById('briefing-dates').append(input); input.focus();
+});
+
+const reactionForm = document.getElementById('reaction-refresh');
+let reactionTimer;
+async function pollReactions() {
+  try {
+    const response = await fetch('/analytics/status', {cache:'no-store'});
+    if (!response.ok) throw new Error('상태 확인 실패');
+    const state = await response.json();
+    document.getElementById('reaction-status').textContent = state.message || '';
+    if (state.state !== 'running') { window.location.reload(); return; }
+    reactionTimer = setTimeout(pollReactions, 2000);
+  } catch {
+    document.getElementById('reaction-status').textContent = '연결을 확인한 뒤 새로고침해주세요. 확인한 반응은 저장되어 있어요.';
+    reactionForm.querySelector('button').disabled = false;
+  }
+}
+async function refreshReactions(event) {
+  event?.preventDefault();
+  const button = reactionForm.querySelector('button'); button.disabled = true;
+  document.getElementById('reaction-status').textContent = '반응을 가져오고 있어요. 다른 화면을 보셔도 괜찮아요.';
+  try {
+    const response = await fetch(reactionForm.action, {method:'POST', body:new FormData(reactionForm), headers:{Accept:'application/json'}});
+    if (!response.ok) throw new Error('반응을 가져오지 못했어요');
+    await pollReactions();
+  } catch {
+    document.getElementById('reaction-status').textContent = '반응을 가져오지 못했어요. 잠시 후 다시 눌러주세요.';
+    button.disabled = false;
+  }
+}
+reactionForm?.addEventListener('submit', refreshReactions);
+if (reactionForm?.dataset.state === 'running') pollReactions();
+else if (reactionForm?.dataset.auto === 'yes') refreshReactions();
+window.addEventListener('pagehide', () => clearTimeout(reactionTimer));

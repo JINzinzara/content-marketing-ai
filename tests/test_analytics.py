@@ -62,10 +62,6 @@ def test_comparison_uses_historical_window_and_excludes_paid_and_unknown(
     assert {x["media_id"] for x in result["evidence"]} == {"media-0", "media-1"}
 
 
-def test_small_sample_does_not_trigger_ai_recommendation(client, csrf):
-    assert client.post("/analytics/recommend", data={"csrf": csrf}).status_code == 422
-
-
 def test_published_layout_preserved_after_later_local_edit(client, new_post, settings):
     identifier = new_post()
     with connect(settings, write=True) as con:

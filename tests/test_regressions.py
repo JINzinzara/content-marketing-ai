@@ -54,7 +54,7 @@ def test_sync_history_can_be_selected_by_id_and_metrics_render(app, client, csrf
         if request.url.path.endswith("/media"):
             assert request.url.params["after"] == "page-one"
             return httpx.Response(200, json={"data": [{"id": "media-1", "caption": "기존 게시물 말투 ☕",
-                "media_type": "IMAGE", "media_url": "https://images.example/past.jpg", "timestamp": "2026-10-19T10:00:00Z"}],
+                "media_type": "IMAGE", "media_product_type": "FEED", "media_url": "https://images.example/past.jpg", "timestamp": "2026-10-19T10:00:00Z"}],
                 "paging": {"next": "https://graph.instagram.com/next", "cursors": {"after": "page-two"}}})
         if request.url.path.endswith("/insights"):
             metric = request.url.params["metric"]
@@ -65,6 +65,7 @@ def test_sync_history_can_be_selected_by_id_and_metrics_render(app, client, csrf
         synced = client.post("/instagram/sync", data={"csrf": csrf, "after": "page-one"})
         assert synced.status_code == 200 and 'id="references-all"' not in synced.text
         assert client.post("/instagram/sync", data={"csrf": csrf, "after": "x" * 2001}).status_code == 422
+        assert client.post("/analytics/collect", data={"csrf": csrf, "media_id": "media-1"}).status_code == 200
         assert client.post("/analytics/collect", data={"csrf": csrf, "media_id": "media-1"}).status_code == 200
     with connect(settings) as con:
         item = reference_list(con, "local-owner")[0]

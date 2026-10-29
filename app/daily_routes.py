@@ -7,7 +7,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, Request
 from starlette.datastructures import UploadFile
 
-from . import lineups
+from . import analytics, briefings, lineups
 from .db import connect, owned_post
 from .rendering import UPLOAD_BYTES, atomic_write, normalize_photo
 from .routes import Form, Owner, back, confirmed, page
@@ -124,3 +124,66 @@ def cancel_schedule(request: Request, post_id: str, who: Owner, form: Form):
         if not con.execute("UPDATE publish_schedules SET state='cancelled', message='사용자가 예약을 취소했어요' WHERE post_id=? AND owner_id=? AND state='pending'", (post_id, who)).rowcount:
             raise HTTPException(409, "이미 처리 중이거나 취소할 예약이 없어요. 게시 상태를 확인해주세요")
     return back("/notices/"+post_id)
+
+
+@router.get("/briefing")
+def briefing_view(request: Request, who: Owner):
+    cfg = request.app.state.settings
+    info = analytics.report(cfg, who)
+    with connect(cfg) as con:
+        setting = con.execute("SELECT * FROM briefing_settings WHERE owner_id=?", (who,)).fetchone()
+        last = con.execute("SELECT * FROM briefing_runs WHERE owner_id=? AND state IN ('ready','no_new_data','insufficient_data') ORDER BY id DESC LIMIT 1", (who,)).fetchone()
+        labels = {row["media_id"]: (row["caption"].strip().splitlines()[0][:50] if row["caption"].strip() else "이전 게시물") for row in con.execute("SELECT media_id, caption FROM history WHERE owner_id=?", (who,))}
+    setting = dict(setting) if setting else {"mode": "off", "local_time": "09:00", "weekdays": "[]", "dates": "[]"}
+    setting["weekdays"], setting["dates"] = json.loads(setting["weekdays"]), json.loads(setting["dates"])
+    cards = []
+    for card in info["briefing"]["cards"]:
+        observation = " / ".join(f'{labels.get(identifier, "게시물 "+str(index+1))}: 저장률 {card["rates"][identifier]*100:.2f}%' for index, identifier in enumerate(card["evidence_ids"]))
+        cards.append({**card, "observation": observation})
+    saved = json.loads(last["content"]) if last else None
+    if not cards and saved and saved.get("evidence"):
+        for card in saved.get("briefing", {}).get("cards", []):
+            cards.append({**card, "observation": " / ".join(f'{labels.get(identifier, "이전 게시물")}: 저장률 {rate*100:.2f}%' for identifier, rate in card["rates"].items())})
+    as_of = max((row["observed_at"] for row in info["evidence"]), default=saved.get("as_of") if saved else None)
+    return page(request, "briefing.html", who, setting=setting, cards=cards, as_of=as_of,
+                can_create=True, evidence_hash=info["evidence_hash"], no_new_data=bool(last and last["state"] == "no_new_data"))
+
+
+@router.post("/briefing/create-post")
+def briefing_create_post(request: Request, who: Owner, form: Form):
+    cfg = request.app.state.settings
+    info = analytics.report(cfg, who)
+    if form.get("evidence_hash") != info["evidence_hash"]:
+        raise HTTPException(409, "새 브리핑을 확인한 뒤 제작해주세요. 비교할 자료가 부족하면 조금 더 기다려주세요")
+    with connect(cfg, write=True) as con:
+        idea = con.execute("SELECT id FROM recommendations WHERE owner_id=? AND evidence_hash=?", (who, info["evidence_hash"])).fetchone()
+        if not idea:
+            if info["briefing"]["cards"]:
+                card = info["briefing"]["cards"][0]
+                content = {"observation": card["observation"], "next_content": card["next_action"], "time_hypothesis": "게시 시각은 이번 추천으로 바꾸지 않아요", "limitations": card["limitations"], "purpose": card["purpose"], "source": "observed_rule"}
+                key = "rules:"+info["evidence_hash"]
+            else:
+                content = {"observation": "반응을 비교하기에는 아직 자료가 부족해요", "next_content": "다음에 알리고 싶은 메뉴 사진과 확인된 특징으로 새 소식을 전해보세요", "time_hypothesis": "게시 시각 제안 없음", "limitations": "반응 비교에 근거하지 않은 기본 제작 제안입니다", "purpose": "상품 소개", "source": "starter"}
+                key = "starter:"+info["evidence_hash"]
+            con.execute("INSERT OR IGNORE INTO recommendations(owner_id, evidence_hash, content, created_at) VALUES (?, ?, ?, ?)", (who, key, json.dumps(content, ensure_ascii=False), int(time.time())))
+            idea = con.execute("SELECT id FROM recommendations WHERE owner_id=? AND evidence_hash=?", (who, key)).fetchone()
+    return back("/posts/new?recommendation_id="+str(idea["id"]))
+
+
+@router.post("/briefing/settings")
+def briefing_settings(request: Request, who: Owner, form: Form):
+    briefings.save_settings(request.app.state.settings, who, str(form.get("mode", "off")), str(form.get("local_time", "")), form.getlist("weekdays"), [part for value in form.getlist("dates") for part in value.split(",")])
+    return back("/briefing")
+
+
+@router.post("/recommendations/{recommendation_id}/choose")
+def choose_recommendation(request: Request, recommendation_id: int, who: Owner, form: Form):
+    target = str(form.get("target", ""))
+    if target:
+        post_id, _, value = target.partition(":")
+        current_revision = revision({"revision": value})
+    else:
+        post_id, current_revision = str(form.get("post_id", "")), revision(form)
+    briefings.apply(request.app.state.settings, who, recommendation_id, post_id, current_revision, str(form.get("action", "")))
+    request.session["notice"] = "이번 초안에 참고할 아이디어를 저장했어요. 문구·이미지를 다음에 생성할 때 참고하고 상품 사실·기본 스타일은 유지해요" if form.get("action") == "applied" else "이번 초안에는 아이디어를 사용하지 않아요"
+    return back("/posts/"+post_id)

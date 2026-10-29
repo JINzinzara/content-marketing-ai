@@ -1,5 +1,6 @@
 {% extends 'base.html' %}{% block content %}
 <a class="back-link" href="/studio">← 작업실</a><div class="page-heading compact"><h1>{{ post.product_name }}</h1><p>확인 후 완성본을 확정해주세요</p></div>
+{% if recommendation_guidance %}<section class="panel"><h2>이번 초안에서 참고하는 아이디어</h2><p>{{ recommendation_guidance.next_content }}</p><p class="help-text">다음 문구·이미지 생성 때 참고해요. 상품 사실·고정 스타일을 우선하고 자동 게시하지 않아요.</p><form action="/recommendations/{{ post.recommendation_id }}/choose" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="post_id" value="{{ post.id }}"><input type="hidden" name="revision" value="{{ post.revision }}"><button class="text-button" type="submit" name="action" value="ignored">이번 초안에서 사용하지 않기</button></form></section>{% endif %}
 <div class="editor-grid"><div class="preview-column">{% include '_feed_preview.html' %}</div>
 <div class="stack roomy"><section class="panel"><h2>문구와 배치 수정</h2><form action="/posts/{{ post.id }}/edit" method="post" class="stack"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ post.revision }}">
 <label for="title">게시물 제목 또는 상품명</label><input id="title" name="title" value="{{ post.title }}" maxlength="60" required>

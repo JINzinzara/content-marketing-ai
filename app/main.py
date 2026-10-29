@@ -1,6 +1,7 @@
 """설정과 저장소를 초기화하고 화면·인증·외부 연동과 웹앱 연결"""
 
 import asyncio
+import threading
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
@@ -70,7 +71,7 @@ def create_app(settings=None, http_client=None):
     @asynccontextmanager
     async def lifespan(app):
         jobs.recover(cfg)
-        tasks = [asyncio.create_task(jobs.run(app, kind)) for kind in ("publishing",)]
+        tasks = [asyncio.create_task(jobs.run(app, kind)) for kind in ("publishing", "briefing")]
         try:
             yield
         finally:
@@ -88,6 +89,8 @@ def create_app(settings=None, http_client=None):
         docs_url=None,
         redoc_url=None,
     )
+    app.state.analytics_refreshes = {}
+    app.state.analytics_lock = threading.Lock()
     app.state.settings = cfg
     app.state.templates = Jinja2Templates(directory=APP_DIR / "templates")
     app.state.templates.env.filters["kst"] = analytics.local_text

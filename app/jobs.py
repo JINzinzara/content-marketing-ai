@@ -4,6 +4,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
+from . import briefings
 from .db import connect, owned_post
 from .lineups import KST, validate_notice
 
@@ -13,6 +14,8 @@ LOG = logging.getLogger(__name__)
 def recover(cfg):
     with connect(cfg, write=True) as con:
         con.execute("UPDATE publish_schedules SET state='unknown', message='앱이 중단되어 결과 확인이 필요해요. 자동 재게시하지 않습니다' WHERE state='processing'")
+        con.execute("UPDATE metric_collection_jobs SET state='error', message='앱 중단으로 수집이 끝나지 않았어요. 게시물 반응 화면에서 다시 수집해주세요' WHERE state='running'")
+        con.execute("UPDATE briefing_runs SET state='error', message='앱 중단으로 수집이 끝나지 않았어요. 다음 주기에 다시 확인합니다' WHERE state='running'")
 
 
 def tick(app, now=None, *, kind="all"):
@@ -20,6 +23,7 @@ def tick(app, now=None, *, kind="all"):
     now = now or datetime.now(timezone.utc)
     with connect(cfg) as con:
         schedules = [dict(row) for row in con.execute("SELECT * FROM publish_schedules WHERE state IN ('pending','processing','unknown')")] if kind in {"all", "publishing"} else []
+        settings = [dict(row) for row in con.execute("SELECT * FROM briefing_settings WHERE mode!='off'")] if kind in {"all", "briefing"} else []
     for job in schedules:
         due = datetime.fromisoformat(job["due_at"])
         if due > now:
@@ -53,6 +57,21 @@ def tick(app, now=None, *, kind="all"):
                 uncertain = row and row["publish_state"] in {"creating", "container_ready", "publishing", "unknown"}
                 message = exc.detail if isinstance(exc, HTTPException) else str(exc) if isinstance(exc, (InstagramError, ValueError)) else "예약 처리 오류. 결과를 확인해주세요"
                 con.execute("UPDATE publish_schedules SET state=?, message=? WHERE post_id=?", ("unknown" if uncertain else "expired" if due.astimezone(KST).date() != now.astimezone(KST).date() else "failed", message, job["post_id"]))
+    for setting in settings:
+        who = setting["owner_id"]
+        try:
+            _, errors = briefings.collect(cfg, instagram, who, now)
+            slot = briefings.due_slot(setting, now)
+            if not slot:
+                continue
+            with connect(cfg, write=True) as con:
+                if not con.execute("INSERT OR IGNORE INTO briefing_runs(owner_id, scheduled_for, created_at, state) VALUES (?, ?, ?, 'running')", (who, slot, now.isoformat())).rowcount:
+                    continue
+            briefings.prepare(cfg, who, slot, errors)
+        except Exception:
+            LOG.exception("Briefing collection failed")
+            with connect(cfg, write=True) as con:
+                con.execute("UPDATE briefing_runs SET state='error', message='반응 수집 중 오류가 발생했어요. 다음 주기에 다시 확인합니다' WHERE owner_id=? AND state='running'", (who,))
 
 
 async def run(app, kind):

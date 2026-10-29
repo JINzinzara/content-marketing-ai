@@ -76,7 +76,11 @@ def test_insight_contract(settings, case):
     if "expected_evidence" in case:
         assert sorted(row["media_id"] for row in after["evidence"]) == sorted(case["expected_evidence"])
     if case["type"] == "INV":
-        assert before["evidence"] == after["evidence"]
+        if mutation == "scale":
+            # 원시 수치는 근거에 보존하므로 달라져도 비율·해석은 같아야 한다.
+            assert [(row["media_id"], row["save_rate"], row["share_rate"]) for row in before["evidence"]] == [(row["media_id"], row["save_rate"], row["share_rate"]) for row in after["evidence"]]
+        else:
+            assert before["evidence"] == after["evidence"]
         assert before["briefing"] == after["briefing"]
     if mutation == "increase_saved":
         assert rates["a"] == pytest.approx(case["expected_changed_rate"])

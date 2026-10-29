@@ -1,0 +1,15 @@
+{% extends 'base.html' %}{% block content %}
+<div class="page-heading"><h1>반응 브리핑</h1><p>반응을 살펴보고 다음에 올릴 콘텐츠를 제안해요.</p></div>
+<section class="panel"><details id="briefing-schedule"><summary>브리핑 주기 · {{ '설정하기' if setting.mode == 'off' else '매일' if setting.mode == 'daily' else '선택한 요일' if setting.mode == 'weekdays' else '선택한 날짜' }}{% if setting.mode != 'off' %} {{ setting.local_time }}{% endif %}</summary>
+<form action="/briefing/settings" method="post" class="stack"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="briefing-mode">받는 주기</label><select name="mode" id="briefing-mode">{% for value,label in [('off','끄기'),('daily','매일'),('weekdays','요일 선택'),('dates','날짜 선택')] %}<option value="{{ value }}" {% if setting.mode == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+<div data-schedule-options class="stack" {% if setting.mode == 'off' %}hidden{% endif %}><label for="briefing-time">받는 시각</label><input type="time" id="briefing-time" name="local_time" value="{{ setting.local_time }}" required></div>
+<fieldset data-period="weekdays" {% if setting.mode != 'weekdays' %}hidden{% endif %}><legend>받을 요일</legend>{% for label in ['월','화','수','목','금','토','일'] %}<label><input type="checkbox" name="weekdays" value="{{ loop.index0 }}" {% if loop.index0 in setting.weekdays %}checked{% endif %}>{{ label }}</label>{% endfor %}</fieldset>
+<div data-period="dates" class="stack" {% if setting.mode != 'dates' %}hidden{% endif %}><label for="first-briefing-date">받을 날짜</label><div id="briefing-dates" class="stack">{% for day in setting.dates %}<input type="date" {% if loop.first %}id="first-briefing-date"{% endif %} name="dates" value="{{ day }}" aria-label="받을 날짜 {{ loop.index }}">{% else %}<input type="date" id="first-briefing-date" name="dates" aria-label="받을 날짜">{% endfor %}</div><button type="button" id="add-briefing-date" class="text-button">날짜 추가</button></div>
+<button class="button secondary" type="submit">주기 저장</button><p class="help-text">한국 시간 기준으로 앱 안에서 확인해요.</p></form></details></section>
+<section class="panel stack"><h2>최근 브리핑</h2>{% if as_of %}<p class="help-text">{{ as_of|kst }} 반응 기준{% if no_new_data %} · 새 반응이 없어 지난 브리핑을 보여드려요.{% endif %}</p>{% endif %}
+{% for card in cards %}<article><h3>{{ card.purpose }}</h3><p>{{ card.observation }}</p><p>{{ card.next_action }}</p></article>{% else %}<p>비교할 반응이 아직 모이고 있어요. 우선 다음 메뉴의 사진과 확인된 특징으로 새 소식을 전해보세요.</p>{% endfor %}
+{% if not cards %}<p class="help-text">반응 비교에 근거하지 않은 기본 제작 제안이에요.</p>{% endif %}
+{% if cards %}<p class="help-text">반응 차이는 관찰 결과예요. 원인이나 매출 효과를 뜻하지 않아요.</p>{% endif %}
+<form action="/briefing/create-post" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="evidence_hash" value="{{ evidence_hash }}"><button class="button primary" type="submit" {% if not can_create %}disabled{% endif %}>추천으로 새 게시물 만들기 →</button></form>
+<a class="text-link" href="/analytics">게시물별 반응 보기</a></section>
+{% endblock %}

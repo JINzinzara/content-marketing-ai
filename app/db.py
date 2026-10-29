@@ -38,6 +38,7 @@ def initialize(settings):
             "content_kind": "TEXT NOT NULL DEFAULT 'promotion'",
             "media_product_type": "TEXT NOT NULL DEFAULT 'FEED'",
             "notice_snapshot": "TEXT NOT NULL DEFAULT '{}'",
+            "recommendation_id": "INTEGER REFERENCES recommendations(id)",
         }.items():
             if name not in columns:
                 con.execute(f"ALTER TABLE posts ADD COLUMN {name} {definition}")
