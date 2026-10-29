@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS posts (
     publish_state TEXT NOT NULL DEFAULT 'not_requested', container_id TEXT,
     ig_media_id TEXT UNIQUE, published_at TEXT, published_snapshot TEXT,
     publish_message TEXT NOT NULL DEFAULT '',
-    promotion TEXT NOT NULL DEFAULT 'unknown', created_at INTEGER NOT NULL
+    promotion TEXT NOT NULL DEFAULT 'unknown', creation_measurement_id TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS oauth_states (
     state_hash TEXT PRIMARY KEY, owner_id TEXT, expires_at INTEGER NOT NULL
@@ -80,3 +80,17 @@ CREATE TABLE IF NOT EXISTS image_generations (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS image_one_active ON image_generations(post_id)
     WHERE state IN ('queued','running','unknown');
+
+CREATE TABLE IF NOT EXISTS production_timings (
+    id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES accounts(id),
+    post_id TEXT NOT NULL REFERENCES posts(id), revision INTEGER NOT NULL,
+    action TEXT NOT NULL, elapsed_ms REAL NOT NULL CHECK(elapsed_ms >= 0),
+    image_id TEXT NOT NULL DEFAULT '', created_at REAL NOT NULL,
+    UNIQUE(post_id, revision, action, image_id)
+);
+CREATE TABLE IF NOT EXISTS production_reviews (
+    post_id TEXT NOT NULL REFERENCES posts(id), revision INTEGER NOT NULL,
+    owner_id TEXT NOT NULL REFERENCES accounts(id), revision_rounds INTEGER NOT NULL CHECK(revision_rounds >= 0),
+    facts_grade TEXT NOT NULL, product_grade TEXT NOT NULL, style_grade TEXT NOT NULL,
+    created_at REAL NOT NULL, PRIMARY KEY(post_id, revision)
+);

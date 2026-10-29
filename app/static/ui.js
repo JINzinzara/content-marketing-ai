@@ -255,6 +255,7 @@ async function refreshImageCandidates() {
   document.getElementById('image-candidates').replaceWith(candidates);
   const form = document.getElementById('image-generation');
   const latest = fresh.getElementById('image-generation');
+  progressPanel.dataset.jobId = fresh.getElementById('image-progress').dataset.jobId;
   const button = form.querySelector('button[type="submit"]');
   const next = latest.querySelector('button[type="submit"]');
   button.disabled = next.disabled; button.textContent = next.textContent;
@@ -281,6 +282,7 @@ async function pollImageProgress() {
     showImageProgress(job);
     if (!['queued', 'running'].includes(job.state)) {
       await refreshImageCandidates();
+      if (job.state === 'completed') await recordCandidateReady(job);
       pollStopped = true;
       document.getElementById('image-recheck').hidden = true;
       if (notifyImageErrors && job.state !== 'completed') {

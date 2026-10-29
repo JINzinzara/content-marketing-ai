@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Resp
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.datastructures import UploadFile
 
-from . import analytics, styles
+from . import analytics, styles, production
 from .text_ai import Recommendation, Style
 from .auth import consume_oauth_state, csrf_token, form_data, owner, authorization_url
 from .credits import finalize
@@ -56,6 +56,23 @@ class EditInput(BaseModel):
     revision: int = Field(ge=1)
 
 
+class TimingInput(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+    id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    action: str = Field(pattern="^(initial_preview|image_candidate|creation_to_ai_candidate|edit_preview)$")
+    elapsed_ms: float = Field(ge=0)
+    revision: int = Field(ge=1)
+    image_id: str = Field(default="", max_length=32)
+
+
+class ProductionReview(BaseModel):
+    revision: int = Field(ge=1)
+    revision_rounds: int = Field(ge=0, le=2**63 - 1)
+    facts_grade: str = Field(pattern="^(충족|부분 충족|미충족)$")
+    product_grade: str = Field(pattern="^(충족|부분 충족|미충족)$")
+    style_grade: str = Field(pattern="^(충족|부분 충족|미충족)$")
+
+
 def validated(model, form):
     try:
         return model.model_validate(dict(form))
@@ -77,7 +94,6 @@ def save_draft(settings, owner_id, post, result):
             "UPDATE posts SET title=?, caption=?, hashtags=?, layout='split', source='ai', revision=revision+1 WHERE id=?",
             (result.title, caption, hashtags, post["id"]),
         )
-
 
 
 def page(request, template, owner_id=None, **context):
@@ -177,6 +193,22 @@ def shop_view(request: Request, who: Owner):
     )
 
 
+def shop_values(form):
+    values = {
+        key: str(form.get(key, "")).strip()
+        for key in ("name", "description", "style", "reference_notes", "color")
+    }
+    if (
+        not 1 <= len(values["name"]) <= 40
+        or len(values["description"]) > 1000
+        or len(values["style"]) > 2400
+        or len(values["reference_notes"]) > 5000
+    ):
+        raise HTTPException(422, "가게 이름과 설명의 길이를 확인해주세요")
+    if not re.fullmatch(r"#[0-9a-fA-F]{6}", values["color"]):
+        raise HTTPException(422, "올바른 색상을 선택해주세요")
+    return values
+
 
 @router.post("/shop")
 def save_shop(request: Request, who: Owner, form: Form):
@@ -242,6 +274,71 @@ def save_shop(request: Request, who: Owner, form: Form):
     return back("/shop")
 
 
+def analyze_references(ai, who, shop, references):
+    images, examples = [], []
+    for row in references:
+        if row["image"]:
+            images.append(row["image"])
+        examples.append({"id": row["id"], "caption": row["caption"][:2200],
+                         "image_index": len(images) if row["image"] else None})
+    return ai.generate(who, "style", {
+        "task": "style_analysis", "shop_description": shop["description"],
+        "reference_notes": shop["reference_notes"], "past_post_examples": examples,
+    }, Style, images=images)
+
+
+@router.post("/shop/fill")
+def fill_shop(request: Request, who: Owner, form: Form):
+    cfg = request.app.state.settings
+    values = shop_values(form)
+    try:
+        version = int(form.get("profile_version", "0"))
+        attributes = styles.Attributes.model_validate({key: str(form.get("style_" + key, "")).strip() for key in styles.FIELDS}).model_dump()
+    except (ValueError, ValidationError):
+        raise HTTPException(422, "스타일 항목과 버전을 확인해주세요") from None
+    locked = list(dict.fromkeys(form.getlist("locked_fields")))
+    if any(key not in attributes or not attributes[key] for key in locked):
+        raise HTTPException(422, "입력한 항목만 고정할 수 있습니다")
+    source = str(form.get("reference_source", "instagram"))
+    if source not in {"instagram", "local"}:
+        raise HTTPException(422, "참고 자료 종류를 확인해주세요")
+    with connect(cfg) as con:
+        current = styles.latest_profile(con, who)
+    if version != (current["version"] if current else 0):
+        raise HTTPException(409, "저장된 스타일이 변경됐습니다. 새로고침 후 확인해주세요")
+    if values["style"] and all(attributes.values()):
+        return {"message": "채울 빈칸이 없어요"}
+    shop = account(cfg, who)
+    if source == "instagram":
+        if not shop["token"]:
+            return JSONResponse({"detail": "Instagram 연결이 필요합니다", "connect_url": "/auth/instagram"}, status_code=409)
+        try:
+            request.app.state.instagram.sync_history(who)
+        except InstagramError as exc:
+            if exc.kind == "auth":
+                return JSONResponse({"detail": str(exc), "connect_url": "/auth/instagram"}, status_code=409)
+            raise
+    with connect(cfg) as con:
+        selected = styles.automatic_references(con, who, source, cfg.history_page_size)
+        references = [styles.reference_data(cfg, con, who, identifier) for identifier in selected]
+    if not references:
+        raise HTTPException(422, "분석할 참고 자료가 없어 빈칸을 유지했습니다. 참고 사진을 추가해주세요")
+    result = analyze_references(request.app.state.ai, who, values, references)
+    content = result.model_dump()
+    content["summary"] = values["style"] or content["summary"]
+    content["attributes"] = {key: value or content["attributes"][key] for key, value in attributes.items()}
+    content["locked_fields"] = locked
+    content["reference_scope"] = {"source": source, "limit": cfg.history_page_size, "analyzed_ids": selected,
+                                  "image_count": sum(bool(r["image"]) for r in references)}
+    with connect(cfg, write=True) as con:
+        latest = styles.latest_profile(con, who)
+        if version != (latest["version"] if latest else 0):
+            raise HTTPException(409, "분석 중 스타일이 변경되어 제안을 적용하지 않았습니다")
+        refs = list(dict.fromkeys((current["reference_ids"] if current else []) + selected))
+        proposal_version = styles.save_profile(con, who, content, refs, "proposal")
+    return {"content": content, "proposal_version": proposal_version,
+            "message": f"참고 자료 {len(references)}개의 빈칸 제안입니다. 확인 후 저장해주세요"}
+
 
 @router.post("/shop/analyze")
 def analyze_shop(request: Request, who: Owner, form: Form):
@@ -283,7 +380,6 @@ def analyze_shop(request: Request, who: Owner, form: Form):
         "스타일 제안 확인 필요"
     )
     return back("/shop")
-
 
 
 @router.post("/shop/references")
@@ -351,6 +447,9 @@ def new_view(request: Request, who: Owner):
 def create_post(request: Request, who: Owner, form: Form):
     cfg = request.app.state.settings
     item = validated(ProductInput, form)
+    measurement_id = str(form.get("measurement_id", ""))
+    if measurement_id and not re.fullmatch(r"[a-f0-9]{32}", measurement_id):
+        raise HTTPException(422, "제작 시간 식별자를 확인해주세요")
     photo = form.get("photo")
     if not isinstance(photo, UploadFile):
         raise HTTPException(422, "새로 게시할 사진을 첨부해주세요")
@@ -381,8 +480,8 @@ def create_post(request: Request, who: Owner, form: Form):
             )
             con.execute(
                 """INSERT INTO posts(id, owner_id, product_name, facts, price, period, purpose, original_file,
-                title, caption, layout, aspect, color, created_at, style_snapshot, show_price) VALUES 
-                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                title, caption, layout, aspect, color, created_at, style_snapshot, show_price, creation_measurement_id) VALUES
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     post_id,
                     who,
@@ -400,6 +499,7 @@ def create_post(request: Request, who: Owner, form: Form):
                     int(time.time()),
                     snapshot,
                     item.show_price,
+                    measurement_id,
                 ),
             )
     except BaseException:
@@ -445,6 +545,8 @@ def post_view(request: Request, post_id: str, who: Owner):
         "post.html",
         who,
         post=post,
+        measurement=production.report(request.app.state.settings, who, post_id),
+        timing_labels=production.LABELS,
         charged=charged,
         attempts=attempts,
         attempt_limit=request.app.state.settings.ai_attempts_per_post,
@@ -460,6 +562,39 @@ def post_view(request: Request, post_id: str, who: Owner):
         ),
     )
 
+
+@router.post("/posts/{post_id}/timings")
+def record_timing(request: Request, post_id: str, who: Owner, form: Form):
+    item = validated(TimingInput, form)
+    with connect(request.app.state.settings, write=True) as con:
+        post = owned_post(con, who, post_id)
+        if post["revision"] != item.revision:
+            raise HTTPException(409, "측정할 버전이 변경됐습니다")
+        if item.action in {"image_candidate", "creation_to_ai_candidate"}:
+            if not con.execute("SELECT 1 FROM image_generations WHERE id=? AND post_id=? AND owner_id=? AND state='completed'", (item.image_id, post_id, who)).fetchone():
+                raise HTTPException(409, "완성된 이미지 후보가 아닙니다")
+        elif item.image_id:
+            raise HTTPException(422, "측정 종류와 이미지가 맞지 않습니다")
+        con.execute("INSERT OR IGNORE INTO production_timings(id,owner_id,post_id,revision,action,elapsed_ms,image_id,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (item.id, who, post_id, item.revision, item.action, item.elapsed_ms, item.image_id, time.time()))
+    return {"recorded": True}
+
+
+@router.post("/posts/{post_id}/review")
+def record_production_review(request: Request, post_id: str, who: Owner, form: Form):
+    item = validated(ProductionReview, form)
+    with connect(request.app.state.settings, write=True) as con:
+        post = owned_post(con, who, post_id)
+        if post["revision"] != item.revision:
+            raise HTTPException(409, "평가할 버전이 변경됐습니다. 현재 결과를 다시 확인해주세요")
+        con.execute("INSERT INTO production_reviews(post_id,owner_id,revision,revision_rounds,facts_grade,product_grade,style_grade,created_at) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(post_id,revision) DO UPDATE SET revision_rounds=excluded.revision_rounds,facts_grade=excluded.facts_grade,product_grade=excluded.product_grade,style_grade=excluded.style_grade,created_at=excluded.created_at",
+                    (post_id, who, item.revision, item.revision_rounds, item.facts_grade, item.product_grade, item.style_grade, time.time()))
+    return back("/posts/" + post_id)
+
+
+@router.get("/posts/{post_id}/measurements")
+def production_measurements(request: Request, post_id: str, who: Owner):
+    return production.report(request.app.state.settings, who, post_id)
 
 
 @router.post("/posts/{post_id}/delete")
@@ -627,7 +762,6 @@ def edit_post(request: Request, post_id: str, who: Owner, form: Form):
         else "수정 저장 완료"
     )
     return back("/posts/" + post_id)
-
 
 
 @router.post("/posts/{post_id}/generate")
@@ -865,88 +999,3 @@ def purchase(request: Request, who: Owner):
 def logout(request: Request, who: Owner, form: Form):
     request.session.clear()
     return back("/")
-
-
-def shop_values(form):
-    values = {
-        key: str(form.get(key, "")).strip()
-        for key in ("name", "description", "style", "reference_notes", "color")
-    }
-    if (
-        not 1 <= len(values["name"]) <= 40
-        or len(values["description"]) > 1000
-        or len(values["style"]) > 2400
-        or len(values["reference_notes"]) > 5000
-    ):
-        raise HTTPException(422, "가게 이름과 설명의 길이를 확인해주세요")
-    if not re.fullmatch(r"#[0-9a-fA-F]{6}", values["color"]):
-        raise HTTPException(422, "올바른 색상을 선택해주세요")
-    return values
-
-
-
-def analyze_references(ai, who, shop, references):
-    images, examples = [], []
-    for row in references:
-        if row["image"]:
-            images.append(row["image"])
-        examples.append({"id": row["id"], "caption": row["caption"][:2200],
-                         "image_index": len(images) if row["image"] else None})
-    return ai.generate(who, "style", {
-        "task": "style_analysis", "shop_description": shop["description"],
-        "reference_notes": shop["reference_notes"], "past_post_examples": examples,
-    }, Style, images=images)
-
-
-
-@router.post("/shop/fill")
-def fill_shop(request: Request, who: Owner, form: Form):
-    cfg = request.app.state.settings
-    values = shop_values(form)
-    try:
-        version = int(form.get("profile_version", "0"))
-        attributes = styles.Attributes.model_validate({key: str(form.get("style_" + key, "")).strip() for key in styles.FIELDS}).model_dump()
-    except (ValueError, ValidationError):
-        raise HTTPException(422, "스타일 항목과 버전을 확인해주세요") from None
-    locked = list(dict.fromkeys(form.getlist("locked_fields")))
-    if any(key not in attributes or not attributes[key] for key in locked):
-        raise HTTPException(422, "입력한 항목만 고정할 수 있습니다")
-    source = str(form.get("reference_source", "instagram"))
-    if source not in {"instagram", "local"}:
-        raise HTTPException(422, "참고 자료 종류를 확인해주세요")
-    with connect(cfg) as con:
-        current = styles.latest_profile(con, who)
-    if version != (current["version"] if current else 0):
-        raise HTTPException(409, "저장된 스타일이 변경됐습니다. 새로고침 후 확인해주세요")
-    if values["style"] and all(attributes.values()):
-        return {"message": "채울 빈칸이 없어요"}
-    shop = account(cfg, who)
-    if source == "instagram":
-        if not shop["token"]:
-            return JSONResponse({"detail": "Instagram 연결이 필요합니다", "connect_url": "/auth/instagram"}, status_code=409)
-        try:
-            request.app.state.instagram.sync_history(who)
-        except InstagramError as exc:
-            if exc.kind == "auth":
-                return JSONResponse({"detail": str(exc), "connect_url": "/auth/instagram"}, status_code=409)
-            raise
-    with connect(cfg) as con:
-        selected = styles.automatic_references(con, who, source, cfg.history_page_size)
-        references = [styles.reference_data(cfg, con, who, identifier) for identifier in selected]
-    if not references:
-        raise HTTPException(422, "분석할 참고 자료가 없어 빈칸을 유지했습니다. 참고 사진을 추가해주세요")
-    result = analyze_references(request.app.state.ai, who, values, references)
-    content = result.model_dump()
-    content["summary"] = values["style"] or content["summary"]
-    content["attributes"] = {key: value or content["attributes"][key] for key, value in attributes.items()}
-    content["locked_fields"] = locked
-    content["reference_scope"] = {"source": source, "limit": cfg.history_page_size, "analyzed_ids": selected,
-                                  "image_count": sum(bool(r["image"]) for r in references)}
-    with connect(cfg, write=True) as con:
-        latest = styles.latest_profile(con, who)
-        if version != (latest["version"] if latest else 0):
-            raise HTTPException(409, "분석 중 스타일이 변경되어 제안을 적용하지 않았습니다")
-        refs = list(dict.fromkeys((current["reference_ids"] if current else []) + selected))
-        proposal_version = styles.save_profile(con, who, content, refs, "proposal")
-    return {"content": content, "proposal_version": proposal_version,
-            "message": f"참고 자료 {len(references)}개의 빈칸 제안입니다. 확인 후 저장해주세요"}

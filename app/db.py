@@ -34,6 +34,7 @@ def initialize(settings):
             "selected_image_id": "TEXT",
             "show_price": "INTEGER NOT NULL DEFAULT 0 CHECK(show_price IN (0,1))",
             "deleted_at": "INTEGER",
+            "creation_measurement_id": "TEXT NOT NULL DEFAULT ''",
         }.items():
             if name not in columns:
                 con.execute(f"ALTER TABLE posts ADD COLUMN {name} {definition}")

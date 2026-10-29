@@ -21,4 +21,13 @@
 {% if not shop.connected %}<p class="help-text">계정 연결 후 게시 가능</p>{% endif %}
 </section></div></div>
 {% include '_image_editor.html' %}
+<div id="production-context" data-post="{{ post.id }}" data-creation="{{ post.creation_measurement_id }}" data-revision="{{ post.revision }}"></div>
+<details class="panel"><summary>제작 결과 기록 · 선택</summary>
+<p id="measurement-status" class="help-text">시간은 이 브라우저에서 결과가 준비될 때 기록해요</p>
+{% for timing in measurement.timings %}<p class="help-text">{{ timing_labels[timing.action] }}: {{ '%.2f'|format(timing.elapsed_ms / 1000) }}초</p>{% endfor %}
+<form class="stack" action="/posts/{{ post.id }}/review" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ post.revision }}">
+{% set current_review = measurement.reviews|selectattr('revision', 'equalto', post.revision)|first|default(none) %}
+<label for="revision-rounds">첫 결과 이후 검토한 수정 회차</label><input id="revision-rounds" name="revision_rounds" type="number" min="0" value="{{ current_review.revision_rounds if current_review else '' }}" required><small>자동 저장·개별 키 입력은 제외해요. 목표는 2회 이내이며 이후에도 수정할 수 있어요.</small>
+{% for key, label in [('facts_grade','상품 정보 정확성'),('product_grade','상품 보존'),('style_grade','가게 스타일')] %}<label for="{{ key }}">{{ label }}</label><select id="{{ key }}" name="{{ key }}" required><option value="">직접 평가</option>{% for grade in ['충족','부분 충족','미충족'] %}<option {% if current_review and current_review[key] == grade %}selected{% endif %}>{{ grade }}</option>{% endfor %}</select>{% endfor %}
+<button class="button secondary" type="submit">현재 결과 기록</button></form></details>
 {% endblock %}
