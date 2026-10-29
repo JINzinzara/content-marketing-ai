@@ -12,6 +12,8 @@ def finalize(settings, owner_id, post_id, *, expected_revision=None):
     """소유권·버전을 검사하고 파일 저장과 차감 후 최신 업로드된 게시물 dict을 반환"""
     with connect(settings, write=True) as con:
         post = owned_post(con, owner_id, post_id)
+        from .lineups import validate_notice
+        validate_notice(con, post)
         if expected_revision is not None and post["revision"] != expected_revision:
             raise HTTPException(
                 409,

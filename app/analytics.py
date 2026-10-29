@@ -174,3 +174,8 @@ def report(settings, owner_id):
             WHERE o.owner_id=? ORDER BY o.id DESC""", (owner_id,),
         ).fetchall()
     return analyze(rows, settings)
+
+
+def local_text(value):
+    parsed = parse_time(value)
+    return parsed.astimezone(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M KST") if parsed else "시각 미확인"

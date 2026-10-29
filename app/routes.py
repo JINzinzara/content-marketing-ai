@@ -16,7 +16,7 @@ from . import analytics, styles, production
 from .text_ai import Recommendation, Style
 from .auth import consume_oauth_state, csrf_token, form_data, owner, authorization_url
 from .credits import finalize
-from .db import account, balance, connect, owned_post
+from .db import account, balance, connect, owned_post, editable_post
 from .costs import spent
 from .captions import caption_parts
 from .rendering import UPLOAD_BYTES, atomic_write, normalize_photo, render
@@ -87,13 +87,14 @@ def save_draft(settings, owner_id, post, result):
     """생성 중 수정·삭제·게시된 내용을 덮어쓰지 않고 새 버전으로 저장한다."""
     caption, hashtags = caption_parts(result.caption, result.hashtags)
     with connect(settings, write=True) as con:
-        current = owned_post(con, owner_id, post["id"])
+        current = editable_post(con, owner_id, post["id"])
         if current["revision"] != post["revision"] or current["publish_state"] in BUSY_PUBLISH:
             raise HTTPException(409, "생성 중 내용이 변경되어 변경이 반영되지 않았습니다")
         con.execute(
             "UPDATE posts SET title=?, caption=?, hashtags=?, layout='split', source='ai', revision=revision+1 WHERE id=?",
             (result.title, caption, hashtags, post["id"]),
         )
+
 
 
 def page(request, template, owner_id=None, **context):
@@ -521,6 +522,8 @@ def create_post(request: Request, who: Owner, form: Form):
 def post_view(request: Request, post_id: str, who: Owner):
     with connect(request.app.state.settings) as con:
         post = owned_post(con, who, post_id)
+        if post["content_kind"] != "promotion":
+            return back("/notices/" + post_id)
         charged = bool(
             con.execute(
                 "SELECT 1 FROM credits WHERE owner_id=? AND reference=?",
@@ -561,6 +564,7 @@ def post_view(request: Request, post_id: str, who: Owner):
             row["state"] in {"queued", "running", "unknown"} for row in images
         ),
     )
+
 
 
 @router.post("/posts/{post_id}/timings")
@@ -617,7 +621,7 @@ def choose_style(request: Request, post_id: str, who: Owner, form: Form):
     cfg = request.app.state.settings
     revision = confirmed(form)
     with connect(cfg, write=True) as con:
-        post = owned_post(con, who, post_id)
+        post = editable_post(con, who, post_id)
         if post["revision"] != revision or post["publish_state"] in {
             "creating",
             "container_ready",
@@ -638,6 +642,7 @@ def choose_style(request: Request, post_id: str, who: Owner, form: Form):
         "게시물 스타일 저장 완료"
     )
     return back("/posts/" + post_id)
+
 
 
 @router.post("/posts/{post_id}/images")
@@ -695,7 +700,7 @@ def select_image(request: Request, post_id: str, who: Owner, form: Form):
     cfg, revision = request.app.state.settings, confirmed(form)
     identifier = str(form.get("image_id", ""))
     with connect(cfg, write=True) as con:
-        post = owned_post(con, who, post_id)
+        post = editable_post(con, who, post_id)
         if post["revision"] != revision or post["publish_state"] in {
             "creating",
             "container_ready",
@@ -722,13 +727,14 @@ def select_image(request: Request, post_id: str, who: Owner, form: Form):
     return back("/posts/" + post_id)
 
 
+
 @router.post("/posts/{post_id}/edit")
 def edit_post(request: Request, post_id: str, who: Owner, form: Form):
     caption, hashtags = caption_parts(str(form.get("caption", "")), str(form.get("hashtags", "")))
     fields = validated(EditInput, {**dict(form), "caption": caption, "hashtags": hashtags})
     cfg = request.app.state.settings
     with connect(cfg, write=True) as con:
-        post = owned_post(con, who, post_id)
+        post = editable_post(con, who, post_id)
         if post["revision"] != fields.revision or post["publish_state"] in {
             "creating",
             "container_ready",
@@ -764,6 +770,7 @@ def edit_post(request: Request, post_id: str, who: Owner, form: Form):
     return back("/posts/" + post_id)
 
 
+
 @router.post("/posts/{post_id}/generate")
 def regenerate(request: Request, post_id: str, who: Owner, form: Form):
     cfg = request.app.state.settings
@@ -793,6 +800,7 @@ def preview(request: Request, post_id: str, who: Owner):
         media_type="image/jpeg",
         headers={"Cache-Control": "no-store"},
     )
+
 
 
 @router.post("/posts/{post_id}/finalize")

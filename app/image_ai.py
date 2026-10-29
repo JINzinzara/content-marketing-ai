@@ -14,7 +14,7 @@ from fastapi import HTTPException
 from PIL import Image, UnidentifiedImageError
 
 from .costs import microusd, reserve
-from .db import balance, connect, owned_post
+from .db import balance, connect, owned_post, editable_post
 from .rendering import atomic_write
 from .styles import post_style, reference_data
 
@@ -116,7 +116,7 @@ class ImageAI:
         """소유권·버전·예산을 확인하고 마스크 없는 자동 편집 작업만 접수한다."""
         cfg = self.settings
         with connect(cfg, write=True) as con:
-            post = owned_post(con, owner_id, post_id)
+            post = editable_post(con, owner_id, post_id)
             if post["revision"] != revision:
                 raise HTTPException(409, "새로고침이 필요해요")
             blocked = self.block_reason(con, post)

@@ -338,7 +338,7 @@ def test_insights_zero_missing_unsupported_and_errors_remain_distinct(
     attach(settings)
     with connect(settings, write=True) as con:
         con.execute(
-            "INSERT INTO history(owner_id, media_id, published_at) VALUES ('local-owner', 'media-1', '2026-10-18T00:00:00Z')"
+            "INSERT INTO history(owner_id, media_id, published_at, media_product_type, purpose) VALUES ('local-owner', 'media-1', '2026-10-18T00:00:00Z', 'FEED', '상품 소개')"
         )
 
     def handler(request):

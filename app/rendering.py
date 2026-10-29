@@ -20,7 +20,7 @@ EMOJI_CHARACTER = re.compile(
 )
 UPLOAD_BYTES = 8 * 1024 * 1024
 MAX_PIXELS = 20_000_000
-ASPECTS = {"portrait": (1080, 1350), "square": (1080, 1080)}
+ASPECTS = {"portrait": (1080, 1350), "square": (1080, 1080), "story": (1080, 1920)}
 LAYOUTS = {"frame", "split"}
 
 
@@ -83,13 +83,17 @@ def atomic_write(path, content):
         Path(name).unlink(missing_ok=True)
 
 
-def font(size, *, emoji=False):
+def font(size, *, emoji=False, weight=None):
     path = EMOJI_FONT if emoji else FONT
     if not path.exists():
         raise HTTPException(
             503, "한글·이모지 글꼴 파일을 설치해주세요 (README의 글꼴 안내 참고)"
         )
-    return ImageFont.truetype(str(path), size)
+    face = ImageFont.truetype(str(path), size)
+    if weight is not None:
+        axes = face.get_variation_axes()
+        face.set_variation_by_axes([max(axis["minimum"], min(weight, axis["maximum"])) if axis["name"] == b"Weight" else axis["default"] for axis in axes])
+    return face
 
 
 def text_runs(text):
@@ -122,10 +126,10 @@ def wrapped(draw, text, faces, width):
     return lines
 
 
-def draw_text(draw, text, box, *, size, fill, minimum=24):
+def draw_text(draw, text, box, *, size, fill, minimum=24, weight=None):
     x, y, width, height = box
     for point in range(size, minimum - 1, -2):
-        faces = (font(point), font(point, emoji=True))
+        faces = (font(point, weight=weight), font(point, emoji=True, weight=weight))
         lines = wrapped(draw, text, faces, width)
         line_height = point * 1.4
         if len(lines) * line_height <= height:

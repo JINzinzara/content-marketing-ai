@@ -10,7 +10,7 @@ import httpx
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from .db import balance, connect, owned_post
+from .db import balance, connect, owned_post, editable_post
 from .costs import reserve as reserve_call
 from .styles import Style, post_style, reference_data
 from .captions import caption_parts
@@ -257,6 +257,8 @@ class TextAI:
 
     def draft(self, owner_id, post_id, shop, post):
         """확인한 상품과 스타일로 Draft 반환"""
+        with connect(self.settings) as con:
+            editable_post(con, owner_id, post_id)
         facts = {
             k: post[k] for k in ("product_name", "facts", "price", "period", "purpose")
         }

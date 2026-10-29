@@ -35,6 +35,9 @@ def initialize(settings):
             "show_price": "INTEGER NOT NULL DEFAULT 0 CHECK(show_price IN (0,1))",
             "deleted_at": "INTEGER",
             "creation_measurement_id": "TEXT NOT NULL DEFAULT ''",
+            "content_kind": "TEXT NOT NULL DEFAULT 'promotion'",
+            "media_product_type": "TEXT NOT NULL DEFAULT 'FEED'",
+            "notice_snapshot": "TEXT NOT NULL DEFAULT '{}'",
         }.items():
             if name not in columns:
                 con.execute(f"ALTER TABLE posts ADD COLUMN {name} {definition}")
@@ -56,6 +59,11 @@ def initialize(settings):
         for table in ("style_references", "history"):
             if "deleted_at" not in {row["name"] for row in con.execute(f"PRAGMA table_info({table})")}:
                 con.execute(f"ALTER TABLE {table} ADD COLUMN deleted_at INTEGER")
+        history_columns = {row["name"] for row in con.execute("PRAGMA table_info(history)")}
+        for name, definition in {"media_product_type": "TEXT NOT NULL DEFAULT 'UNKNOWN'",
+                                 "purpose": "TEXT NOT NULL DEFAULT ''", "promotion": "TEXT NOT NULL DEFAULT 'unknown'"}.items():
+            if name not in history_columns:
+                con.execute(f"ALTER TABLE history ADD COLUMN {name} {definition}")
         if con.execute("PRAGMA user_version").fetchone()[0] < 4:
             # 제목을 빼기 전 완성본을 새 미리보기와 같은 파일로 취급하지 않는다.
             con.execute("UPDATE posts SET revision=revision+1 WHERE finished_file IS NOT NULL AND publish_state NOT IN ('creating','container_ready','publishing','unknown')")
@@ -100,3 +108,11 @@ def balance(con, owner_id):
     return con.execute(
         "SELECT COALESCE(SUM(amount), 0) FROM credits WHERE owner_id=?", (owner_id,)
     ).fetchone()[0]
+
+
+def editable_post(con, owner_id, post_id):
+    from fastapi import HTTPException
+    post = owned_post(con, owner_id, post_id)
+    if post["content_kind"] != "promotion":
+        raise HTTPException(409, "당일 공지는 오늘 메뉴 화면에서 변경 후 새로 만들어주세요")
+    return post

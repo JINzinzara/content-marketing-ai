@@ -190,7 +190,7 @@ class Instagram:
         """게시물을 갱신하고 직접 가져온 경우에만 삭제한 참고자료를 복원한다."""
         ig_id, token = self.connection(owner_id)
         params = {
-            "fields": "id,caption,media_type,media_url,thumbnail_url, timestamp, permalink",
+            "fields": "id,caption,media_type,media_product_type,media_url,thumbnail_url,timestamp,permalink",
             "limit": self.settings.history_page_size,
         }
         if after:
@@ -203,9 +203,9 @@ class Instagram:
                 if not item.get("id"):
                     continue
                 con.execute(
-                    """INSERT INTO history(owner_id, media_id, caption, media_type, media_url, thumbnail_url, published_at, permalink)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(owner_id, media_id) DO UPDATE SET
-                    caption=excluded.caption, media_type=excluded.media_type, media_url=excluded.media_url,
+                    """INSERT INTO history(owner_id, media_id, caption, media_type, media_url, thumbnail_url, published_at, permalink, media_product_type)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(owner_id, media_id) DO UPDATE SET
+                    caption=excluded.caption, media_type=excluded.media_type, media_product_type=excluded.media_product_type, media_url=excluded.media_url,
                     thumbnail_url=excluded.thumbnail_url, published_at=COALESCE(excluded.published_at, history.published_at), permalink=excluded.permalink,
                     deleted_at=CASE WHEN ? THEN NULL ELSE history.deleted_at END""",
                     (
@@ -217,6 +217,7 @@ class Instagram:
                         item.get("thumbnail_url"),
                         item.get("timestamp"),
                         item.get("permalink"),
+                        item.get("media_product_type") or "UNKNOWN",
                         restore_deleted,
                     ),
                 )
@@ -257,6 +258,8 @@ class Instagram:
             )
             with connect(self.settings, write=True) as con:
                 current = owned_post(con, owner_id, post_id)
+                from .lineups import validate_notice
+                validate_notice(con, current)
                 if current["publish_state"] not in {"not_requested", "failed"}:
                     raise HTTPException(409, "이미 게시를 요청했습니다")
                 if (
@@ -281,6 +284,9 @@ class Instagram:
                         "show_price",
                         "style_snapshot",
                         "selected_image_id",
+                        "media_product_type",
+                        "content_kind",
+                        "revision",
                     )
                 }
                 con.execute(
@@ -306,7 +312,7 @@ class Instagram:
                         + "/media/"
                         + capability
                         + ".jpg",
-                        "caption": caption_text(current),
+                        **({"media_type": "STORIES"} if current["media_product_type"] == "STORY" else {"caption": caption_text(current)}),
                     },
                 )
                 if not result.get("id"):
@@ -355,6 +361,8 @@ class Instagram:
                     )
                 return
             with connect(self.settings, write=True) as con:
+                from .lineups import validate_notice
+                validate_notice(con, owned_post(con, owner_id, post_id))
                 changed = con.execute(
                     "UPDATE posts SET publish_state='publishing' WHERE id=? AND publish_state='container_ready'",
                     (post_id,),
@@ -375,10 +383,11 @@ class Instagram:
                 )
             with connect(self.settings, write=True) as con:
                 con.execute(
-                    "UPDATE posts SET publish_state='published', ig_media_id=?, publish_message='' WHERE id=?",
-                    (str(result["id"]), post_id),
+                    "UPDATE posts SET publish_state='published', ig_media_id=?, published_at=?, publish_message='' WHERE id=?",
+                    (str(result["id"]), datetime.now(timezone.utc).isoformat(), post_id),
                 )
-            self.sync_history(owner_id)
+            if post["media_product_type"] != "STORY":
+                self.sync_history(owner_id)
         except InstagramError as exc:
             self._failure(post_id, exc)
             raise

@@ -94,3 +94,28 @@ CREATE TABLE IF NOT EXISTS production_reviews (
     facts_grade TEXT NOT NULL, product_grade TEXT NOT NULL, style_grade TEXT NOT NULL,
     created_at REAL NOT NULL, PRIMARY KEY(post_id, revision)
 );
+
+CREATE TABLE IF NOT EXISTS menus (
+    id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES accounts(id),
+    name TEXT NOT NULL, filename TEXT NOT NULL, created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS lineups (
+    id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES accounts(id), day TEXT NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1, confirmed_at INTEGER,
+    UNIQUE(owner_id, day)
+);
+CREATE TABLE IF NOT EXISTS lineup_items (
+    lineup_id TEXT NOT NULL REFERENCES lineups(id), menu_id TEXT NOT NULL REFERENCES menus(id),
+    sold_out INTEGER NOT NULL DEFAULT 0 CHECK(sold_out IN (0,1)),
+    PRIMARY KEY(lineup_id, menu_id)
+);
+CREATE TABLE IF NOT EXISTS notices (
+    post_id TEXT PRIMARY KEY REFERENCES posts(id), lineup_id TEXT NOT NULL REFERENCES lineups(id),
+    lineup_revision INTEGER NOT NULL, menu_id TEXT NOT NULL DEFAULT '',
+    UNIQUE(lineup_id, lineup_revision, menu_id)
+);
+CREATE TABLE IF NOT EXISTS publish_schedules (
+    post_id TEXT PRIMARY KEY REFERENCES posts(id), owner_id TEXT NOT NULL REFERENCES accounts(id),
+    revision INTEGER NOT NULL, due_at TEXT NOT NULL, state TEXT NOT NULL,
+    message TEXT NOT NULL DEFAULT ''
+);

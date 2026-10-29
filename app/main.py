@@ -1,6 +1,7 @@
 """설정과 저장소를 초기화하고 화면·인증·외부 연동과 웹앱 연결"""
 
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 import httpx
@@ -12,6 +13,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from . import jobs, analytics
 from .text_ai import TextAI
 from .config import Settings
 from .db import initialize
@@ -67,9 +69,18 @@ def create_app(settings=None, http_client=None):
 
     @asynccontextmanager
     async def lifespan(app):
-        yield
-        if http_client is None:
-            client.close()
+        jobs.recover(cfg)
+        tasks = [asyncio.create_task(jobs.run(app, kind)) for kind in ("publishing",)]
+        try:
+            yield
+        finally:
+            for task in tasks:
+                task.cancel()
+            for task in tasks:
+                with suppress(asyncio.CancelledError):
+                    await task
+            if http_client is None:
+                client.close()
 
     app = FastAPI(
         title="콘텐츠 관리 서비스",
@@ -79,6 +90,7 @@ def create_app(settings=None, http_client=None):
     )
     app.state.settings = cfg
     app.state.templates = Jinja2Templates(directory=APP_DIR / "templates")
+    app.state.templates.env.filters["kst"] = analytics.local_text
     app.state.instagram = Instagram(cfg, client)
     app.state.ai = TextAI(cfg, client)
     app.state.image_ai = ImageAI(cfg, client)
@@ -138,4 +150,6 @@ def create_app(settings=None, http_client=None):
     app.mount("/static", StaticFiles(directory=APP_DIR / "static"), name="static")
     app.mount("/fonts", StaticFiles(directory=APP_DIR / "assets/fonts"), name="fonts")
     app.include_router(router)
+    from .daily_routes import router as daily_router
+    app.include_router(daily_router)
     return app
