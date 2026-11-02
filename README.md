@@ -4,7 +4,7 @@
 사진과 상품 정보를 기존 Instagram 분위기에 맞는 홍보물로 만들도록 돕는 웹앱이다.<br> 
 
 
-[프로젝트 보고서](docs/report.pdf) · [개발일지](https://app.notion.com/p/3fec6fc0469681a8a6a8d8f8d4820a29)
+[프로젝트 보고서](docs/project-report.pdf) · [개발일지](https://app.notion.com/p/3fec6fc0469681a8a6a8d8f8d4820a29)
 
 ## 서비스 시연 영상
 [![시연 영상 보기](https://img.youtube.com/vi/T0XWwMQNAac/hqdefault.jpg)](https://youtu.be/T0XWwMQNAac)
