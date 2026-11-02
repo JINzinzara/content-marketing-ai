@@ -44,7 +44,7 @@ GRADES = {"", "충족", "부분 충족", "미충족"}
 REVIEW_FIELDS = ("sample_id", "kind", "group", "case", *CRITERIA["text"], *CRITERIA["image"], "reason")
 SOURCE_FILES = ("backend/model_compare.py", "backend/analysis_compare.py", "backend/style_pipeline_compare.py", "backend/text_ai.py", "backend/image_ai.py", "backend/rendering.py",
                 "backend/costs.py", "backend/config.py", "backend/db.py", "backend/schema.sql", "backend/styles.py", "backend/analytics.py", "backend/captions.py",
-                "README.md", "pyproject.toml")
+                "docs/project-report.md", "pyproject.toml")
 OWNER = "model-comparison"
 
 
@@ -166,7 +166,7 @@ def prepare(config_path, out, phase="final", model=None, case=None):
         manifest["git_head"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, stderr=subprocess.DEVNULL, text=True).strip()
     except subprocess.CalledProcessError:
         manifest["git_head"] = None
-    atomic_write(out / "protocol.md", (ROOT / "README.md").read_bytes())
+    atomic_write(out / "protocol.md", (ROOT / "docs/project-report.md").read_bytes())
     manifest["files_sha256"]["protocol.md"] = digest((out / "protocol.md").read_bytes())
     for c, raw, photo in normalized:
         input_name = "inputs/" + c["id"] + ".jpg"
