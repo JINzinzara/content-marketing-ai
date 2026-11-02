@@ -7,7 +7,7 @@
 [프로젝트 보고서](docs/report.pdf) · [개발일지](https://app.notion.com/p/3fec6fc0469681a8a6a8d8f8d4820a29)
 
 ## 서비스 시연 영상
-[![시연 영상 보기](docs/assets/demo-poster.jpg)](docs/assets/content_marketing_vedio.mp4)
+[![시연 영상 보기](https://img.youtube.com/vi/T0XWwMQNAac/hqdefault.jpg)](https://youtu.be/T0XWwMQNAac)
 
 - 00:00~00:55: 연결 상태·가게 스타일 설정과 저장
 - 00:55~03:35: 상품 사진·정보 입력 / 문구·이미지 생성
@@ -21,6 +21,19 @@
 - 상품 사진과 확인된 정보로 문구·이미지를 만들고 원본 비교·수정·확정·다운로드
 - 오늘 메뉴(라인업)·품절 공지 제작 및 당일 게시 예약 지원
 - 과거 게시물 반응을 조회하고, 주기 브리핑에서 다음 게시물 초안 제안
+
+### 아키텍처
+
+![프로젝트 아키텍처](docs/assets/architecture.png)
+
+| 구분 | 기술 | 역할 |
+|-----|-----|-----|
+| 서버 | Python 3.12 이상·FastAPI·Uvicorn | 요청 처리·기능 제공 |
+| 화면 | Jinja2·HTML·CSS·JavaScript | 화면 렌더링·사용자 조작 |
+| 저장 | SQLite·로컬 파일 | 상태·버전·비용·반응 및 이미지 보관 |
+| 이미지 후처리 | Pillow | 미리보기·완성본 렌더링 |
+| 외부 통신 | httpx | OpenAI·Instagram API 호출 |
+| 인증·보호 | OAuth 상태·세션·CSRF·Fernet | 요청 검증·연결 토큰 암호화 |
 
 ## 로컬 실행
 
@@ -51,3 +64,4 @@ python -m uvicorn backend.main:create_app --factory --port 8765 --workers 1
 | Instagram 연결·게시·반응 조회 | [Meta 앱·공개 HTTPS 설정](docs/configuration.md#instagram-연동) |
 
 설정 후 서버를 다시 실행합니다. 자세한 사용법과 오류 해결은 [추가 설정·사용 안내](docs/configuration.md)를 참고합니다.
+
