@@ -3,11 +3,12 @@
 기대 시도 수 = 1 / 합격률, 합격 1건당 비용 = 전체 비용 / 합격 수,
 기대 대기 시간 = API 중앙값 × 기대 시도 수. 새 API 호출은 하지 않는다.
 
-실행: python -m backend.kpi_report [저장소 루트]
+실행: python -m backend.kpi_report [저장소 루트] [앱 DB 경로]
 """
 
 import csv
 import sqlite3
+import statistics
 import sys
 from pathlib import Path
 
@@ -45,18 +46,23 @@ def style_rows(runs):
                          "text_pass": f'{text["passed"]}/{text["planned"]}', "path_cost": total}
 
 
-def app_timings(db):
+def app_measurements(db):
+    """구간별 실측 표본 수·중앙값과, 앱에서 기록한 버전별 품질 판정(세 항목 모두 충족이면 합격)."""
     if not db.exists():
-        return []
+        return {}, []
     with sqlite3.connect(db) as con:
-        return con.execute("SELECT action, elapsed_ms / 1000.0, revision FROM production_timings ORDER BY created_at").fetchall()
+        timings = {}
+        for action, sec in con.execute("SELECT action, elapsed_ms / 1000.0 FROM production_timings"):
+            timings.setdefault(action, []).append(sec)
+        reviews = con.execute("SELECT revision_rounds, facts_grade, product_grade, style_grade FROM production_reviews").fetchall()
+    return {a: (len(v), statistics.median(v)) for a, v in timings.items()}, reviews
 
 
 def fmt(v, digits=6):
     return "-" if v is None else f"{v:.{digits}f}"
 
 
-def main(root):
+def main(root, db=None):
     runs = root / "backend" / "comparison" / "runs"
     print("| 구분 | 모델 | 합격 | 1회 비용 | 합격 1건당 비용 | 기대 시도 수 | 기대 대기(초) |")
     print("|---|---|---|---|---|---|---|")
@@ -66,10 +72,15 @@ def main(root):
     print("|---|---|---|---|---|")
     for analyzer, s in style_rows(runs):
         print(f"| {analyzer} | {fmt(s['analysis_cost'])} | {s['analysis_s']:.1f} | {s['text_pass']} | {fmt(s['path_cost'])} |")
-    print("\n| 앱 실측 구간 | 초 | 버전 |")
+    timings, reviews = app_measurements(db or root / "data" / "instagram-test" / "app.sqlite3")
+    print("\n| 앱 실측 구간 | 표본 수 | 중앙값(초) |")
     print("|---|---|---|")
-    for action, sec, revision in app_timings(root / "data" / "instagram-test" / "app.sqlite3"):
-        print(f"| {action} | {sec:.1f} | {revision} |")
+    for action, (n, med) in sorted(timings.items()):
+        print(f"| {action} | {n} | {med:.1f} |")
+    if reviews:
+        passed = sum(all(g == "충족" for g in r[1:]) for r in reviews)
+        rounds = statistics.median(r[0] for r in reviews)
+        print(f"\n앱 품질 판정: 합격 {passed}/{len(reviews)}, 수정 회차 중앙값 {rounds}")
 
 
 def _check():
@@ -80,4 +91,4 @@ def _check():
 
 if __name__ == "__main__":
     _check()
-    main(Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT)
+    main(Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT, Path(sys.argv[2]) if len(sys.argv) > 2 else None)

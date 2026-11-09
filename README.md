@@ -4,7 +4,17 @@
 사진과 상품 정보를 기존 Instagram 분위기에 맞는 홍보물로 만들도록 돕는 웹앱이다.<br> 
 
 
-[프로젝트 보고서](docs/project-report.pdf) · [개발일지](https://app.notion.com/p/3fec6fc0469681a8a6a8d8f8d4820a29)
+[프로젝트 보고서](docs/project-report.pdf) · [개발일지](https://app.notion.com/p/3fec6fc0469681a8a6a8d8f8d4820a29) · [기대값 지표](docs/metrics.md)
+
+## 핵심 결과
+
+모델은 생성 1회가 아니라 **바로 쓸 수 있는 홍보물 1건**을 기준으로 골랐다.
+
+- **이미지:** gpt-image-2는 1회 단가가 45.5% 비싸지만, 재시도를 포함한 합격 1건당 비용은 12.7% 낮고 기대 대기 시간은 27% 짧다(합격 5/5 대 3/5).
+- **문구·스타일 분석:** gpt-5.4-mini가 같은 합격 기준에서 비용을 71% 줄였다. 응답 시간은 문구 50%, 스타일 분석 65% 줄었다.
+- **원가:** 확정 모델 기준 홍보물 1건(문구+이미지)은 약 $0.013이다.
+
+한 가게·한 상품·평가자 1명 기준의 비교다. 계산은 `python -m backend.kpi_report`로 재현할 수 있다.
 
 ## 서비스 시연 영상
 [![시연 영상 보기](https://img.youtube.com/vi/T0XWwMQNAac/hqdefault.jpg)](https://youtu.be/T0XWwMQNAac)
