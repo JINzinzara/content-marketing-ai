@@ -13,8 +13,18 @@
 - **이미지:** gpt-image-2는 1회 단가가 45.5% 비싸지만, 재시도를 포함한 합격 1건당 비용은 12.7% 낮고 기대 대기 시간은 27% 짧다(합격 5/5 대 3/5).
 - **문구·스타일 분석:** gpt-5.4-mini가 같은 합격 기준에서 비용을 71% 줄였다. 응답 시간은 문구 50%, 스타일 분석 65% 줄었다.
 - **원가:** 확정 모델 기준 홍보물 1건(문구+이미지)은 약 $0.013이다.
+- **상품 보존:** 상품 영역 DINO 유사도는 gpt-image-2가 0.894, gpt-image-1-mini가 0.753이다. 사람 체크리스트로는 두 모델 모두 합격이었던 차이를 연속 지표가 가려냈다.
+- **가게 스타일:** 결과 이미지는 입력 사진보다 기존 피드의 스타일(VGG Gram 거리)에 약 52% 가까워졌다.
+- **판정 자동화:** 체크리스트를 규칙·LLM 판정기로 옮겨 사람 판정과 89~91% 일치했다.
 
-한 가게·한 상품·평가자 1명 기준의 비교다. 계산은 `python -m backend.kpi_report`로 재현할 수 있다.
+한 가게·한 상품·평가자 1명 기준의 비교다. 재현 방법과 지표 선정 근거는 [기대값 지표](docs/metrics.md)에 있다.
+
+```bash
+python -m backend.kpi_report        # 합격 1건당 비용·기대 대기 시간
+python -m pip install -e ".[eval]"  # 평가용 의존성
+python -m backend.eval_metrics      # 이미지 정량 지표
+python -m backend.eval_judge        # 규칙·LLM 판정과 사람 일치도
+```
 
 ## 서비스 시연 영상
 [![시연 영상 보기](https://img.youtube.com/vi/T0XWwMQNAac/hqdefault.jpg)](https://youtu.be/T0XWwMQNAac)
