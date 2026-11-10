@@ -1,0 +1,26 @@
+image,x0,y0,x1,y1,note
+input:original,444,534,802,806,원본 1200x1567. 큰 원형 스탠드 앞줄 오른쪽 메인 쿠키
+input:light-dim-warm,410,488,734,738,합성 1098x1433
+input:light-bright-cool,410,488,734,738,합성 1098x1433
+input:angle-left,388,468,703,714,합성 1098x1433
+input:angle-higher,419,450,725,705,합성 1098x1433
+bc860cb85298,170,185,865,795,gpt-image-1-mini light-bright-cool
+c57c3b7d4bbc,255,415,768,838,gpt-image-2 light-bright-cool
+e961a269f7a2,95,170,945,885,gpt-image-1-mini light-dim-warm
+60f75f1bd1fe,310,415,735,782,gpt-image-2 light-dim-warm
+c253aaadcbf1,100,200,905,865,gpt-image-1-mini angle-left
+6bafaffeb603,265,385,790,800,gpt-image-2 angle-left
+a499fe692758,115,215,898,876,gpt-image-1-mini original
+7a64269d0823,232,335,812,798,gpt-image-2 original
+5d4507f34c30,203,228,812,826,gpt-image-1-mini angle-higher
+56814b4e6712,262,392,765,815,gpt-image-2 angle-higher
+156872ad3c3a,280,375,800,792,스타일 경로 angle-left
+3b6b27b03f2b,255,420,800,842,스타일 경로 original
+302710f8f48b,228,452,798,888,스타일 경로 light-dim-warm
+08e65a0f3619,280,368,748,767,스타일 경로 light-bright-cool
+b7962e6e09e1,220,348,804,818,스타일 경로 light-dim-warm
+4dba6114a570,242,404,800,842,스타일 경로 light-bright-cool
+de9ac48085e2,228,314,790,796,스타일 경로 angle-higher
+1455aae5bc76,249,348,826,833,스타일 경로 angle-higher
+8904c9af0f26,245,377,821,855,스타일 경로 angle-left
+3d68a36625c9,257,365,773,804,스타일 경로 original
