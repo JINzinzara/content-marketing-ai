@@ -91,7 +91,6 @@ def prepare(references, out, config_path=ROOT / "backend/comparison/spooky-cooki
     out.mkdir(parents=True, exist_ok=False, mode=0o700)
     for name in ("inputs", "references", "styles", "styles/requests", "styles/samples"):
         (out / name).mkdir()
-    save_input(out, manifest, "protocol.md", (ROOT / "docs/metrics.md").read_bytes())
     audit = {"profile_version": source["profile_version"], "previous_profile": source["previous_profile"]}
     save_input(out, manifest, "previous-confirmed-profile.json", json.dumps(audit, ensure_ascii=False, indent=2).encode())
     for i, (ref, photo) in enumerate(zip(refs, ref_photos), 1):
@@ -296,7 +295,7 @@ def render_review(out, manifest, states, verdicts, reviews):
     page = ('<!doctype html><html lang="ko"><meta charset="utf-8"><title>인스타 스타일 경로 A/B 비교</title>'
         '<style>body{font:16px system-ui;max-width:1200px;margin:32px auto;padding:0 20px;background:#f8f4ee;color:#39291f}.pair,.feed{display:grid;grid-template-columns:1fr 1fr;gap:20px}.feed{grid-template-columns:repeat(4,1fr)}article{background:white;border-radius:12px;padding:18px;min-width:0}img{width:100%;height:auto}img.input{width:240px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}small{line-height:1.7}section,details{margin:30px 0}.feed pre{max-height:240px;overflow:auto}@media(max-width:700px){.pair{grid-template-columns:1fr}.feed{grid-template-columns:1fr 1fr}}</style>'
         '<h1>기존 인스타 스타일 → 최종 제작 A/B 비교</h1><p>같은 기존 게시물에서 스타일을 분석했습니다. 두 경로의 문구·이미지 생성 모델은 같습니다. A/B는 분석부터 최종 결과까지 같은 경로이며, 분석 모델명·비용은 가렸습니다.</p>'
-        '<p><a href="protocol.md">실험 범위·기준</a> · <a href="reviews.csv">개별 평가 20행</a> · <a href="bundles.csv">묶음 평가 4행</a> · <a href="preferences.csv">선호 평가 2행</a></p>'
+        '<p><a href="reviews.csv">개별 평가 20행</a> · <a href="bundles.csv">묶음 평가 4행</a> · <a href="preferences.csv">선호 평가 2행</a></p>'
         '<p>개별 결과는 해당 영역의 한글 기준만 평가하세요. 등급: 충족/부분 충족/미충족. 부분 충족은 불합격입니다. 문제가 있는 결과와 선호 판정에는 이유를 적으세요. 묶음은 기존 게시물 일치와 결과 간 일관성을 각각 평가합니다. 생성 완료는 품질 합격이 아닙니다.</p>'
         + ''.join(sections) + '</html>')
     atomic_write(out / "review.html", page.encode())

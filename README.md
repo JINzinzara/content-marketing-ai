@@ -4,7 +4,7 @@
 사진과 상품 정보를 기존 Instagram 분위기에 맞는 홍보물로 만들도록 돕는 웹앱이다.<br> 
 
 
-[프로젝트 보고서](docs/project-report.pdf) · [개발일지](https://app.notion.com/p/3fec6fc0469681a8a6a8d8f8d4820a29) · [기대값 지표](docs/metrics.md)
+[프로젝트 보고서](docs/project-report.pdf) · [개발일지](https://app.notion.com/p/3fec6fc0469681a8a6a8d8f8d4820a29)
 
 ## 결과 요약
 
@@ -14,7 +14,7 @@
 
 다른 상품 5개를 실제 앱으로 만들었을 때 제작 시작부터 첫 AI 후보까지 중앙값 43.4초가 걸렸다. 이때 문구가 기존 피드와 말투가 달라서, 피드에서 센 말투 규칙을 넣어 마침표로 끝나는 줄을 63%에서 0%로 줄였다. 그래도 블라인드 비교에서는 고친 문구가 5개 중 2개만 선택됐다.
 
-모두 한 가게, 평가자 1명 기준이다. 재현 방법과 지표를 고른 이유는 [기대값 지표](docs/metrics.md)에 정리했다.
+모두 한 가게, 평가자 1명 기준이다. 지표를 고른 이유와 한계는 [프로젝트 보고서](docs/project-report.pdf) 2-3절과 3-7절에 정리했다.
 
 ```bash
 python -m backend.kpi_report        # 합격 1건당 비용·기대 대기 시간

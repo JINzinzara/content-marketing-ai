@@ -44,7 +44,7 @@ GRADES = {"", "충족", "부분 충족", "미충족"}
 REVIEW_FIELDS = ("sample_id", "kind", "group", "case", *CRITERIA["text"], *CRITERIA["image"], "reason")
 SOURCE_FILES = ("backend/model_compare.py", "backend/analysis_compare.py", "backend/style_pipeline_compare.py", "backend/text_ai.py", "backend/image_ai.py", "backend/rendering.py",
                 "backend/costs.py", "backend/config.py", "backend/db.py", "backend/schema.sql", "backend/styles.py", "backend/analytics.py", "backend/captions.py",
-                "docs/metrics.md", "pyproject.toml")
+                "pyproject.toml")
 OWNER = "model-comparison"
 
 
@@ -166,8 +166,6 @@ def prepare(config_path, out, phase="final", model=None, case=None):
         manifest["git_head"] = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, stderr=subprocess.DEVNULL, text=True).strip()
     except subprocess.CalledProcessError:
         manifest["git_head"] = None
-    atomic_write(out / "protocol.md", (ROOT / "docs/metrics.md").read_bytes())
-    manifest["files_sha256"]["protocol.md"] = digest((out / "protocol.md").read_bytes())
     for c, raw, photo in normalized:
         input_name = "inputs/" + c["id"] + ".jpg"
         atomic_write(out / input_name, photo)
@@ -602,7 +600,7 @@ def report(out):
         consistency = (bundles[(kind, group)]["grade"] or "미평가") if len(selected) == 5 else "탐색: 5개 미만으로 판정 대상 아님"
         sections.append(f'<section><h2>{"문구" if kind == "text" else "이미지"} 그룹 {group}</h2><p>묶음 일관성: {esc(consistency)}</p><div class="row">{"".join(cards)}</div></section>')
     definitions = "".join(f'<li>{key}: {esc(value)}</li>' for criteria in CRITERIA.values() for key, value in criteria.items())
-    page = '<!doctype html><html lang="ko"><meta charset="utf-8"><title>스푸키쿠키 사람 검증</title><style>body{font:16px system-ui;margin:24px;background:#f8f4ee;color:#39291f}h1,h2{color:#76472e}.row{display:flex;gap:16px;overflow-x:auto}article{flex:0 0 260px;padding:16px;background:white;border-radius:12px}img{width:100%;height:auto}pre{white-space:pre-wrap;font:inherit}small{line-height:1.7}section{margin:32px 0}</style><h1>스푸키쿠키 사람 검증</h1><p>모델명·비용은 가려져 있습니다. 최종 비교에서는 같은 그룹의 5개를 나란히 보고, 개별 품질과 묶음 일관성을 별도로 평가하세요. 부분 충족은 불합격입니다.</p><p>' + esc(scope) + '</p><p>메인 상품: 큰 원형 스탠드 앞줄 오른쪽, 중앙에 가까운 쿠키 한 개. 다른 쿠키는 제거해야 합니다. 생성 원본과 4:5 미리보기를 모두 확인하세요.</p><p>reviews.csv는 결과당 한 행입니다. 문구 행의 T01~T09 또는 이미지 행의 H01~H04에 등급을 적고, 다른 영역은 비워 두세요. 충족은 reason을 생략할 수 있고, 부분 충족·미충족이 있으면 결과당 한 번 이유를 씁니다. A/B 선호 판정에는 이유가 필요합니다. 공통 평가자는 evaluator.txt의 이름을 사용하며 기본값은 본인입니다. 세부 판정은 최종 비교 기준 총 130개입니다.</p><details><summary>판정 기준</summary><ul>' + definitions + '</ul><p><a href="protocol.md">고정한 전체 평가 기준</a></p><p>bundles.csv: 5개 묶음 일관성 / preferences.csv: A 우세·비슷함·B 우세와 이유. 판정을 저장한 후 report를 다시 실행하세요. 생성 당시 protocol.md의 기준은 유지하고 입력은 위 형식을 따릅니다.</p></details>' + ''.join(sections) + '</html>'
+    page = '<!doctype html><html lang="ko"><meta charset="utf-8"><title>스푸키쿠키 사람 검증</title><style>body{font:16px system-ui;margin:24px;background:#f8f4ee;color:#39291f}h1,h2{color:#76472e}.row{display:flex;gap:16px;overflow-x:auto}article{flex:0 0 260px;padding:16px;background:white;border-radius:12px}img{width:100%;height:auto}pre{white-space:pre-wrap;font:inherit}small{line-height:1.7}section{margin:32px 0}</style><h1>스푸키쿠키 사람 검증</h1><p>모델명·비용은 가려져 있습니다. 최종 비교에서는 같은 그룹의 5개를 나란히 보고, 개별 품질과 묶음 일관성을 별도로 평가하세요. 부분 충족은 불합격입니다.</p><p>' + esc(scope) + '</p><p>메인 상품: 큰 원형 스탠드 앞줄 오른쪽, 중앙에 가까운 쿠키 한 개. 다른 쿠키는 제거해야 합니다. 생성 원본과 4:5 미리보기를 모두 확인하세요.</p><p>reviews.csv는 결과당 한 행입니다. 문구 행의 T01~T09 또는 이미지 행의 H01~H04에 등급을 적고, 다른 영역은 비워 두세요. 충족은 reason을 생략할 수 있고, 부분 충족·미충족이 있으면 결과당 한 번 이유를 씁니다. A/B 선호 판정에는 이유가 필요합니다. 공통 평가자는 evaluator.txt의 이름을 사용하며 기본값은 본인입니다. 세부 판정은 최종 비교 기준 총 130개입니다.</p><details><summary>판정 기준</summary><ul>' + definitions + '</ul><p>bundles.csv: 5개 묶음 일관성 / preferences.csv: A 우세·비슷함·B 우세와 이유. 판정을 저장한 후 report를 다시 실행하세요. 입력은 위 형식을 따릅니다.</p></details>' + ''.join(sections) + '</html>'
     atomic_write(out / "review.html", page.encode())
     return summary
 

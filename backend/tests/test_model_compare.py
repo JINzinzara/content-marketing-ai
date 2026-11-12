@@ -72,7 +72,7 @@ def fill_reviews(out, grade="충족"):
 def test_freezes_twenty_slots_and_requires_execute(experiment, capsys):
     out, manifest, cfg, config = experiment
     assert len(manifest["samples"]) == 20
-    assert (out / "protocol.md").read_bytes() == (mc.ROOT / "docs/metrics.md").read_bytes()
+    assert not (out / "protocol.md").exists()
     assert manifest["source_sha256"]["backend/captions.py"] == mc.digest((mc.ROOT / "backend/captions.py").read_bytes())
     assert all(sum(s["model"] == m for s in manifest["samples"]) == 5 for m in mc.MODELS)
     assert not cfg.data_dir.exists()
@@ -465,14 +465,14 @@ def test_valid_output_with_missing_usage_is_kept_but_stops(experiment):
     assert mc.read_json(mc.record_path(out, manifest["samples"][0]))["state"] == "completed"
 
 
-def test_report_changes_are_frozen_but_app_readme_edits_are_not(tmp_path):
-    for name in set((*mc.SOURCE_FILES, "README.md", "docs/metrics.md")):
+def test_source_changes_are_frozen_but_app_readme_edits_are_not(tmp_path):
+    for name in set((*mc.SOURCE_FILES, "README.md")):
         target = tmp_path / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes((mc.ROOT / name).read_bytes())
     original = mc.source_hashes(tmp_path)
     (tmp_path / "README.md").write_text("Updated app installation instructions\n")
     assert mc.source_hashes(tmp_path) == original
-    report = tmp_path / "docs/metrics.md"
-    report.write_bytes(report.read_bytes() + b"\nChanged experiment protocol\n")
+    source = tmp_path / "backend/captions.py"
+    source.write_bytes(source.read_bytes() + b"\n# changed\n")
     assert mc.source_hashes(tmp_path) != original

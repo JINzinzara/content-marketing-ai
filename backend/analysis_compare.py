@@ -80,10 +80,9 @@ def prepare(config_path, out):
     out.mkdir(parents=True, exist_ok=False, mode=0o700)
     for name in ("inputs", "requests", "samples"):
         (out / name).mkdir()
-    atomic_write(out / "protocol.md", (ROOT / "docs/metrics.md").read_bytes())
     manifest = {"version": 1, "suite": "analysis", "phase": "final", "run_id": secrets.token_hex(8),
                 "created_at": time.time(), "config": cfg, "source_sha256": mc.source_hashes(),
-                "files_sha256": {"protocol.md": mc.digest((out / "protocol.md").read_bytes())},
+                "files_sha256": {},
                 "cases": [], "samples": [], "regeneration": "first_attempt_only", "python_version": sys.version,
                 "dependencies": {n: importlib.metadata.version(n) for n in ("httpx", "Pillow", "pydantic")}}
     groups = {}
@@ -222,7 +221,7 @@ def report(out):
     page = ('<!doctype html><html lang="ko"><meta charset="utf-8"><title>스타일·추천 A/B 검토</title>'
             '<style>body{font:16px system-ui;max-width:1200px;margin:30px auto;padding:0 20px;background:#f8f4ee;color:#39291f}img{width:240px;height:auto}.pair{display:grid;grid-template-columns:1fr 1fr;gap:18px}article{background:white;padding:18px;border-radius:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}section{margin:30px 0}small{line-height:1.7}@media(max-width:650px){.pair{grid-template-columns:1fr}}</style>'
             '<h1>스타일 분석·추천 A/B 검토</h1><p style="background:#fff0ce;padding:16px">' + esc(STYLE_SCOPE_NOTE) + '</p><p>모델명과 비용을 가린 결과입니다. 각 기능의 A/B 표시는 독립적입니다.</p>'
-            '<p><a href="protocol.md">평가 기준과 실험 범위</a> · <a href="reviews.csv">개별 평가표 20행</a> · <a href="preferences.csv">선호 평가표 2행</a></p>'
+            '<p><a href="reviews.csv">개별 평가표 20행</a> · <a href="preferences.csv">선호 평가표 2행</a></p>'
             '<p>자료 일치·근거 연결·단정 억제·활용 가능에 충족/부분 충족/미충족을 입력하세요. 부분 충족은 불합격이며, 문제가 있는 결과와 상대 선호에만 이유를 씁니다. 공통 평가자는 evaluator.txt의 본인입니다. 생성 완료는 품질 합격이 아닙니다.</p>'
             + ''.join(sections) + '</html>')
     atomic_write(out / "review.html", page.encode())
