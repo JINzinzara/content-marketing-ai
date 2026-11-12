@@ -4,7 +4,7 @@
   임베딩 코사인 유사도를 잰다(DreamBooth의 주제 충실도 지표, Malhi et al. 2025의 상품 영역 방식).
 - 가게 스타일: VGG-16 Gram 행렬 스타일 거리(Gatys et al.)로 결과와 기존 Instagram 게시물 8장을 비교한다.
 
-PSNR·SSIM·LPIPS·CLIP-I는 검토 후 뺐다. 이유는 docs/metrics.md의 "지표 선정 근거"에 있다.
+PSNR·SSIM·LPIPS·CLIP-I는 검토 후 뺐다. 이유는 docs/metrics.md의 "이미지 지표" 절에 있다.
 
 설치: python -m pip install -e ".[eval]"
 실행: python -m backend.eval_metrics [저장소 루트]

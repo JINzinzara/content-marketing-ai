@@ -63,7 +63,7 @@ def csv_rows(path):
 
 def test_freezes_twenty_paired_requests_and_uses_clear_review_headers(analysis_experiment, capsys):
     out, manifest, settings, _ = analysis_experiment
-    assert (out / "protocol.md").read_bytes() == (ROOT / "docs/project-report.md").read_bytes()
+    assert (out / "protocol.md").read_bytes() == (ROOT / "docs/metrics.md").read_bytes()
     assert len(manifest["samples"]) == 20 and not settings.data_dir.exists()
     for case in manifest["cases"]:
         selected = [s for s in manifest["samples"] if s["case"] == case["id"]]

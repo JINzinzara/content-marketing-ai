@@ -60,7 +60,7 @@ def handler(request):
 
 def test_freezes_same_real_feed_and_twenty_human_rows(pipeline, capsys):
     out, manifest, settings = pipeline
-    assert (out / "protocol.md").read_bytes() == (ROOT / "docs/project-report.md").read_bytes()
+    assert (out / "protocol.md").read_bytes() == (ROOT / "docs/metrics.md").read_bytes()
     style = mc.frozen_manifest(out / "styles")
     payloads = [mc.read_json(out / "styles" / s["request"]) for s in style["samples"]]
     for payload in payloads:
