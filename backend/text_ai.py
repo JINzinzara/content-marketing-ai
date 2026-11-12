@@ -52,6 +52,40 @@ INSTRUCTIONS = """너는 작은 베이커리 카페의 Instagram 콘텐츠 제�
 - 표본과 비교 조건이 부족하면 결론을 내리지 않고 다음에 시험할 가설을 제안한다.
 - 이번 초안의 선택적 추천은 표현 아이디어다. 상품 사실·가격·기간·고정 스타일보다 우선하지 않는다. 추천을 새로운 상품 사실로 취급하거나 게시 시간을 자동 변경하지 않는다.
 """
+VOICE_INSTRUCTIONS = """- 문구 생성에서 shop_voice_rules는 기존 게시물 본문에서 코드로 센 말투 규칙이다. 예시를 참고하는 것보다 이 규칙을 우선해서 지킨다.
+- confirmed_product에 없는 맛·식감·향·온도 표현(부드러운, 진한, 따뜻한, 고소한, 풍미 등)을 새로 만들지 않는다. 사용자가 적은 표현은 그대로 써도 된다.
+- 어느 상품에나 붙일 수 있는 상투적인 마무리('~로 소개드립니다', '~준비해두었습니다', '~즐기기 좋은 한 잔')를 쓰지 않는다. 마무리는 기존 게시물처럼 가게 이야기·함께 먹을 메뉴 추천·짧은 감탄으로 쓰거나 생략한다.
+"""
+INSTRUCTIONS += VOICE_INSTRUCTIONS
+EMOJI = re.compile("[\U0001F300-\U0001FAFF☀-➿⭐]")
+FORMAL_END = re.compile(r"(?:입니다|습니다|드립니다)[.!]?$")
+
+
+def voice_stats(captions):
+    """본문 줄(해시태그 줄 제외)의 마침표 끝·격식체 끝·이모지 비율."""
+    lines = [s for c in captions for line in c.splitlines() if (s := line.strip()) and not s.startswith("#")]
+    if not lines:
+        return None
+    share = lambda test: sum(map(test, lines)) / len(lines)
+    return {"lines": len(lines), "period": share(lambda s: s.endswith(".")),
+            "formal": share(lambda s: bool(FORMAL_END.search(s))), "emoji": share(lambda s: bool(EMOJI.search(s)))}
+
+
+def voice_rules(captions):
+    """기존 게시물에서 센 표면 말투를 생성 규칙 문장으로 바꾼다. 근거가 약한 습관은 규칙으로 만들지 않는다."""
+    stats = voice_stats(captions)
+    if not stats or stats["lines"] < 10:  # ponytail: 10줄 미만이면 습관으로 보기 어렵다. 기준은 이 값만 조정
+        return []
+    n, rules = stats["lines"], []
+    if stats["period"] < 0.1:
+        rules.append(f"문장 끝에 마침표를 쓰지 않는다(기존 {n}줄 중 {stats['period']:.0%})")
+    elif stats["period"] > 0.6:
+        rules.append(f"문장 끝에 마침표를 쓴다(기존 {n}줄 중 {stats['period']:.0%})")
+    if stats["formal"] < 0.2:
+        rules.append(f"'~입니다/~습니다'보다 '~에요/~어요/~요' 끝맺음을 주로 쓴다(기존 격식체 {stats['formal']:.0%})")
+    if stats["emoji"] >= 0.2:
+        rules.append(f"이모지는 상품명이나 줄 끝에 가끔 붙인다(기존 줄의 {stats['emoji']:.0%})")
+    return rules
 
 
 def validate_draft(draft, facts):
@@ -260,6 +294,13 @@ class TextAI:
         """확인한 상품과 스타일로 Draft 반환"""
         with connect(self.settings) as con:
             editable_post(con, owner_id, post_id)
+        data, image, facts = self.draft_request(owner_id, shop, post)
+        result = self.generate(owner_id, "draft", data, Draft, post_id=post_id, images=[image])
+        return self.checked_draft(result, facts)
+
+    def draft_request(self, owner_id, shop, post):
+        """문구 생성 요청 자료. 앱과 문구 재측정(caption_retest)이 같은 요청을 쓴다."""
+        with connect(self.settings) as con:
             from .briefings import guidance
             recommendation = guidance(con, post)
         facts = {
@@ -279,23 +320,22 @@ class TextAI:
                 for identifier in style.get("reference_ids", [])
             ]
         examples = [{"id": row["id"], "caption": row["caption"][:2200]} for row in examples if row]
-        result = self.generate(
-            owner_id,
-            "draft",
-            {
-                "task": "confirmed_product_only",
-                "optional_idea_for_this_draft": recommendation,
-                "shop": shop["name"],
-                "confirmed_style": shop["style"],
-                "resolved_visual_style": style,
-                "past_post_examples": examples,
-                "show_price": show_price,
-                "confirmed_product": facts,
-            },
-            Draft,
-            post_id=post_id,
-            images=[image],
-        )
+        data = {
+            "task": "confirmed_product_only",
+            "optional_idea_for_this_draft": recommendation,
+            "shop": shop["name"],
+            "confirmed_style": shop["style"],
+            "resolved_visual_style": style,
+            "past_post_examples": examples,
+            "shop_voice_rules": voice_rules([row["caption"] for row in examples]),
+            "show_price": show_price,
+            "confirmed_product": facts,
+        }
+        return data, image, facts
+
+    def checked_draft(self, result, facts):
+        """본문·태그 분리, 길이·날짜·가격 규칙 검증"""
+        show_price = "price" in facts
         caption, hashtags = caption_parts(result.caption, result.hashtags)
         try:
             result = Draft.model_validate({**result.model_dump(), "caption": caption, "hashtags": hashtags})
